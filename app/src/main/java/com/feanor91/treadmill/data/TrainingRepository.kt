@@ -40,7 +40,7 @@ class TrainingRepository(private val db: AppDatabase) {
             SessionEntity(
                 planName = s.planName, startedAt = s.startedAt, durationSec = s.durationSec,
                 distanceM = s.distanceM, avgHr = s.avgHr, maxHr = s.maxHr, avgSpeedKmh = s.avgSpeedKmh,
-                activeKcal = s.activeKcal,
+                activeKcal = s.activeKcal, steps = s.steps,
             ),
         )
         if (s.completed) s.scheduleId?.let { dao.markDone(it) }

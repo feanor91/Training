@@ -89,6 +89,7 @@ class WearBridge(context: Context, private val scope: CoroutineScope) {
                         .put("remaining", if (ui.isUnlimited) -1 else (ui.totalSec - ui.elapsedSec).coerceAtLeast(0))
                         .put("step", ui.currentStep?.label ?: "")
                         .put("kcal", ui.kcal)
+                        .put("steps", ui.steps)
                     send(WearProtocol.PATH_STATE, json.toString().toByteArray(Charsets.UTF_8))
                 }
             }

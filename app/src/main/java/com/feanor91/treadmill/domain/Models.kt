@@ -58,6 +58,8 @@ data class SessionSummary(
     val completed: Boolean,
     /** Dépense active estimée (hors métabolisme de repos). */
     val activeKcal: Int = 0,
+    /** Pas estimés (le tapis n'en fournit pas). */
+    val steps: Int = 0,
     /** Échantillons (toutes les 5 s) pour l'export Health Connect ; non persistés. */
     val samples: List<Sample> = emptyList(),
 )

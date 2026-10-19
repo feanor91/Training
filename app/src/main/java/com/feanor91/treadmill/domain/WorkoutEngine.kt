@@ -32,6 +32,8 @@ data class WorkoutUi(
     val countdownSec: Int = 0,
     /** Dépense active estimée depuis le début de la séance. */
     val kcal: Int = 0,
+    /** Pas estimés depuis le début de la séance. */
+    val steps: Int = 0,
 ) {
     val currentStep: WorkoutStep? get() = steps.getOrNull(stepIndex)
     val nextStep: WorkoutStep? get() = steps.getOrNull(stepIndex + 1)
@@ -69,6 +71,7 @@ class WorkoutEngine(
     private var hrN = 0
     private var hrMax = 0
     private var kcalAcc = 0.0
+    private var stepsAcc = 0.0
     private val samples = ArrayList<Sample>()
 
     val running get() = _ui.value.state == WorkoutState.Running || _ui.value.state == WorkoutState.Paused
@@ -77,7 +80,7 @@ class WorkoutEngine(
         if (running || steps.isEmpty()) return
         this.scheduleId = scheduleId
         distanceBase = ftms.metrics.value.distanceM
-        integratedM = 0.0; kcalAcc = 0.0; samples.clear(); speedSum = 0.0; speedN = 0; hrSum = 0; hrN = 0; hrMax = 0
+        integratedM = 0.0; kcalAcc = 0.0; stepsAcc = 0.0; samples.clear(); speedSum = 0.0; speedN = 0; hrSum = 0; hrN = 0; hrMax = 0
         val limits = ftms.limits.value
         val fixed = steps.map { it.copy(speedKmh = limits.clampSpeed(it.speedKmh), inclinePct = limits.clampIncline(it.inclinePct)) }
         _ui.value = WorkoutUi(
@@ -179,6 +182,7 @@ class WorkoutEngine(
         val hr = externalHeartRate() ?: m.heartRate
 
         kcalAcc += Calories.activeKcalPerMin(speed, incline, profile().weightKg) / 60.0
+        stepsAcc += Calories.stepsPerSecond(speed, profile().heightCm)
         integratedM += speed / 3.6
         speedSum += speed; speedN++
         if (hr != null) { hrSum += hr; hrN++; hrMax = maxOf(hrMax, hr) }
@@ -190,7 +194,7 @@ class WorkoutEngine(
         val remaining = if (step.durationSec == 0) 0 else u.stepRemainingSec - 1
         _ui.update {
             it.copy(
-                elapsedSec = it.elapsedSec + 1, kcal = kcalAcc.toInt(), stepRemainingSec = remaining.coerceAtLeast(0),
+                elapsedSec = it.elapsedSec + 1, kcal = kcalAcc.toInt(), steps = stepsAcc.toInt(), stepRemainingSec = remaining.coerceAtLeast(0),
                 speedKmh = speed, inclinePct = incline, heartRate = hr, distanceM = dist,
             )
         }
@@ -206,7 +210,7 @@ class WorkoutEngine(
             avgHr = if (hrN > 0) (hrSum / hrN).toInt() else 0, maxHr = hrMax,
             avgSpeedKmh = if (speedN > 0) speedSum / speedN else 0.0,
             scheduleId = scheduleId, completed = completed,
-            activeKcal = kcalAcc.toInt(), samples = samples.toList(),
+            activeKcal = kcalAcc.toInt(), steps = stepsAcc.toInt(), samples = samples.toList(),
         )
         _ui.update { it.copy(state = WorkoutState.Finished, summary = summary, speedKmh = 0.0) }
         scope.launch {

@@ -38,6 +38,17 @@ object Calories {
         return vo2 * weightKg / 1000.0 * KCAL_PER_L_O2
     }
 
+    /**
+     * Pas par seconde estimés sur tapis : longueur de pas = taille × coefficient croissant avec la vitesse
+     * (≈ 0,41 à 4,5 km/h, ≈ 0,47 à 8 km/h), cadence = vitesse / longueur de pas.
+     * Le tapis ne fournit pas de nombre de pas : c'est une estimation.
+     */
+    fun stepsPerSecond(speedKmh: Double, heightCm: Double): Double {
+        if (speedKmh <= 0.0 || heightCm <= 0.0) return 0.0
+        val stepLengthM = heightCm / 100.0 * (0.35 + 0.015 * speedKmh).coerceIn(0.38, 0.5)
+        return speedKmh / 3.6 / stepLengthM
+    }
+
     /** Métabolisme de base journalier (Mifflin-St Jeor), en kcal. */
     fun bmrPerDay(p: UserProfile): Double {
         val base = 10.0 * p.weightKg + 6.25 * p.heightCm - 5.0 * p.age

@@ -22,6 +22,7 @@ data class PhoneState(
     val remainingSec: Int = -1,
     val step: String = "",
     val kcal: Int = 0,
+    val steps: Int = 0,
 ) {
     companion object {
         fun parse(json: String): PhoneState? = runCatching {
@@ -36,6 +37,7 @@ data class PhoneState(
                 remainingSec = o.optInt("remaining", -1),
                 step = o.optString("step"),
                 kcal = o.optInt("kcal"),
+                steps = o.optInt("steps"),
             )
         }.getOrNull()
     }

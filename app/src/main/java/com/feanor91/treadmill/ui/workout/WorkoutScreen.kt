@@ -60,6 +60,7 @@ import com.feanor91.treadmill.ui.theme.WorkoutColors
 fun WorkoutScreen() {
     val engine = appContainer().engine
     val ui by engine.ui.collectAsState()
+    val exportStatus by appContainer().exportStatus.collectAsState()
     var confirmStop by remember { mutableStateOf(false) }
 
     KeepScreenOn()
@@ -95,10 +96,11 @@ fun WorkoutScreen() {
                     color = WorkoutColors.Dim, fontSize = 44.sp,
                 )
             }
-            Text(
-                "${ui.kcal} kcal" + if (!ui.isUnlimited) " · ${formatKm(ui.distanceM)} km" else "",
-                color = WorkoutColors.Dim, fontSize = 16.sp,
-            )
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("🔥 ${ui.kcal} kcal", color = WorkoutColors.Incline, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                Text("👣 %,d pas".format(ui.steps).replace(',', ' '), color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                if (!ui.isUnlimited) Text("${formatKm(ui.distanceM)} km", color = WorkoutColors.Dim, fontSize = 22.sp)
+            }
             if (!ui.isUnlimited) {
                 LinearProgressIndicator(
                     progress = { (ui.elapsedSec.toFloat() / ui.totalSec).coerceIn(0f, 1f) },
@@ -181,12 +183,15 @@ fun WorkoutScreen() {
             onDismissRequest = engine::dismiss,
             title = { Text(if (s.completed) "Séance terminée 🎉" else "Séance arrêtée") },
             text = {
+                Column {
                 Text(
                     "Durée ${formatClock(s.durationSec)}\nDistance ${formatKm(s.distanceM)} km\n" +
-                        "Vitesse moyenne ${formatSpeed(s.avgSpeedKmh)} km/h\nDépense active ≈ ${s.activeKcal} kcal" +
+                        "Vitesse moyenne ${formatSpeed(s.avgSpeedKmh)} km/h\nDépense active ≈ ${s.activeKcal} kcal\nPas estimés ≈ ${s.steps}" +
                         if (s.avgHr > 0) "\nCardio moyen ${s.avgHr} · max ${s.maxHr} bpm" else "",
                     textAlign = TextAlign.Start,
                 )
+                exportStatus?.let { Text("\n$it", fontWeight = FontWeight.Medium) }
+                }
             },
             confirmButton = { TextButton(engine::dismiss) { Text("OK") } },
         )

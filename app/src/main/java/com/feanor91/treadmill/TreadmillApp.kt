@@ -22,7 +22,7 @@ class AppContainer(app: Application) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private val db = Room.databaseBuilder(app, AppDatabase::class.java, "training.db")
-        .addMigrations(AppDatabase.MIGRATION_1_2)
+        .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
         .build()
     val repository = TrainingRepository(db)
 
@@ -34,23 +34,30 @@ class AppContainer(app: Application) {
 
     val wear = WearBridge(app, scope)
 
+    /** Résultat de l'export Health Connect de la dernière séance (affiché dans le bilan de fin). */
+    val exportStatus = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
     val engine = WorkoutEngine(
         ftms, externalHeartRate = { heartRate.heartRate.value ?: wear.watchHr.value }, scope,
         profile = { profileStore.profile.value },
     ) { summary ->
         // Les sorties trop courtes (< 30 s) ne polluent pas l'historique.
         if (summary.durationSec >= 30) {
+            exportStatus.value = "Envoi à Health Connect…"
             val id = repository.recordSession(summary)
-            // Export automatique si Health Connect est autorisé ; sinon réessayable depuis l'historique.
-            runCatching {
+            // Export automatique à la fin de chaque séance ; sinon réessayable depuis l'historique.
+            exportStatus.value = runCatching {
                 val ok = health.export(
                     ExportableSession(
                         summary.planName, summary.startedAt, summary.durationSec, summary.distanceM,
-                        summary.activeKcal, summary.avgSpeedKmh, summary.samples,
+                        summary.activeKcal, summary.avgSpeedKmh, summary.steps, summary.samples,
                     ),
                 )
-                if (ok) repository.markExported(id)
-            }
+                if (ok) { repository.markExported(id); "✓ Séance envoyée à Health Connect" }
+                else "Non envoyée à Health Connect : autorisez-le dans l'onglet Santé, puis utilisez « Envoyer » dans l'historique."
+            }.getOrElse { "Envoi à Health Connect impossible (${it.message}) : réessayez depuis l'historique." }
+        } else {
+            exportStatus.value = "Séance trop courte (moins de 30 s) : non enregistrée."
         }
     }
 

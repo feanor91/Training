@@ -86,6 +86,7 @@ data class ExportableSession(
     val distanceM: Int,
     val activeKcal: Int,
     val avgSpeedKmh: Double,
+    val steps: Int = 0,
     val samples: List<com.feanor91.treadmill.domain.Sample> = emptyList(),
 )
 
@@ -119,11 +120,13 @@ class HealthConnectGateway(private val context: Context) {
         HealthPermission.getReadPermission(RestingHeartRateRecord::class),
         HealthPermission.getReadPermission(Vo2MaxRecord::class),
         HealthPermission.getReadPermission(StepsRecord::class),
+        HealthPermission.getWritePermission(StepsRecord::class),
     )
 
     val permissions: Set<String> = corePermissions + bodyPermissions
 
-    private val writePermissions = permissions.filter { it.contains("WRITE") }.toSet()
+    /** Seules les écritures de base sont exigées pour exporter ; les pas sont ajoutés si autorisés. */
+    private val writePermissions = corePermissions.filter { it.contains("WRITE") }.toSet()
 
     fun availability(): HcAvailability {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return HcAvailability.Unsupported
@@ -140,6 +143,8 @@ class HealthConnectGateway(private val context: Context) {
         if (availability() == HcAvailability.Available) client.permissionController.getGrantedPermissions() else emptySet()
 
     suspend fun canWrite() = granted().containsAll(writePermissions)
+
+    private suspend fun canWriteSteps() = HealthPermission.getWritePermission(StepsRecord::class) in granted()
 
     /** Écrit séance, distance, calories actives, vitesse et rythme cardiaque. */
     suspend fun export(s: ExportableSession): Boolean {
@@ -162,6 +167,9 @@ class HealthConnectGateway(private val context: Context) {
         }
         if (s.activeKcal > 0) {
             records += ActiveCaloriesBurnedRecord(start, offset, end, offset, Energy.kilocalories(s.activeKcal.toDouble()), meta())
+        }
+        if (s.steps > 0 && canWriteSteps()) {
+            records += StepsRecord(start, offset, end, offset, s.steps.toLong(), meta())
         }
         val inRange = s.samples.map { it.copy(timeMs = it.timeMs.coerceIn(start.toEpochMilli(), end.toEpochMilli() - 1)) }
             .distinctBy { it.timeMs }

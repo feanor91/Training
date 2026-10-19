@@ -37,3 +37,18 @@ class CaloriesTest {
         assertEquals(1574.0, Calories.bmrPerDay(UserProfile(97.0, 172.0, 62, Sex.Female)), 1e-9)
     }
 }
+
+class StepsTest {
+    @Test fun walkingCadenceIsPlausible() {
+        val perMin = Calories.stepsPerSecond(4.5, 172.0) * 60
+        assertTrue("cadence $perMin", perMin in 95.0..115.0)
+    }
+
+    @Test fun fasterMeansMoreSteps() {
+        assertTrue(Calories.stepsPerSecond(8.0, 172.0) > Calories.stepsPerSecond(4.0, 172.0))
+    }
+
+    @Test fun zeroWhenStopped() {
+        assertEquals(0.0, Calories.stepsPerSecond(0.0, 172.0), 0.0)
+    }
+}

@@ -84,7 +84,7 @@ private fun WatchScreen() {
                     fontSize = 14.sp, color = Color(0xFF5FD3B5),
                 )
                 if (phone.step.isNotBlank()) Text(phone.step, fontSize = 12.sp, color = Color.Gray, maxLines = 1)
-                Text("${phone.kcal} kcal", fontSize = 12.sp, color = Color.Gray)
+                Text("${phone.kcal} kcal · ${phone.steps} pas", fontSize = 12.sp, color = Color.Gray)
             } else {
                 Text(
                     if (measuring) "Mesure en cours" else "Lancez une séance sur le téléphone",

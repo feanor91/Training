@@ -50,7 +50,7 @@ class HistoryViewModel(private val c: AppContainer) : ViewModel() {
     fun export(s: SessionEntity) = viewModelScope.launch {
         message.value = runCatching {
             val ok = c.health.export(
-                ExportableSession(s.planName, s.startedAt, s.durationSec, s.distanceM, s.activeKcal, s.avgSpeedKmh),
+                ExportableSession(s.planName, s.startedAt, s.durationSec, s.distanceM, s.activeKcal, s.avgSpeedKmh, s.steps),
             )
             if (ok) { c.repository.markExported(s.id); "Séance envoyée à Health Connect." }
             else "Autorisez d'abord Health Connect dans l'onglet Santé."
@@ -97,7 +97,7 @@ fun HistoryScreen() {
                                 "${formatClock(s.durationSec)} · ${formatKm(s.distanceM)} km · ${formatSpeed(s.avgSpeedKmh)} km/h moy." +
                                     if (s.avgHr > 0) " · ♥ ${s.avgHr}/${s.maxHr}" else "",
                             )
-                            if (s.activeKcal > 0) Text("≈ ${s.activeKcal} kcal actives")
+                            if (s.activeKcal > 0) Text("≈ ${s.activeKcal} kcal actives · ≈ ${s.steps} pas")
                             if (s.exported) Text("✓ Health Connect", style = MaterialTheme.typography.bodySmall)
                             else TextButton({ vm.export(s) }) { Text("Envoyer à Health Connect") }
                         }
