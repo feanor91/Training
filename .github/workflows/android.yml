@@ -19,6 +19,24 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Licences SDK
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+      - name: Clé de signature (secrets du dépôt)
+        env:
+          KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+          STORE_PW: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          KEY_PW: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            {
+              echo "SIGNING_KEYSTORE_FILE=$RUNNER_TEMP/release.keystore"
+              echo "SIGNING_STORE_PASSWORD=$STORE_PW"
+              echo "SIGNING_KEY_ALIAS=$KEY_ALIAS"
+              echo "SIGNING_KEY_PASSWORD=$KEY_PW"
+            } >> "$GITHUB_ENV"
+          else
+            echo "::warning::Secret SIGNING_KEYSTORE_B64 absent : APK signé avec une clé de debug éphémère (mise à jour impossible)."
+          fi
       - name: Tests unitaires
         run: ./gradlew testDebugUnitTest
       - name: APK debug (installable sur Android 7+)

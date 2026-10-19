@@ -13,12 +13,32 @@ android {
         applicationId = "com.feanor91.treadmill"
         minSdk = 24 // Android 7.0
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        // Croît à chaque build CI pour que les mises à jour s'installent par-dessus la précédente.
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionName = "1.0.$versionCode"
+    }
+
+    // Clé de signature fournie par l'environnement (secrets GitHub en CI). Sans elle, Gradle retombe
+    // sur la clé de debug locale, régénérée à chaque runner CI : la signature change alors à chaque
+    // build et Android refuse la mise à jour par-dessus l'installation existante.
+    val keystorePath = System.getenv("SIGNING_KEYSTORE_FILE")
+    if (keystorePath != null) {
+        signingConfigs {
+            create("fixed") {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("SIGNING_STORE_PASSWORD")
+                keyAlias = System.getenv("SIGNING_KEY_ALIAS")
+                keyPassword = System.getenv("SIGNING_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
+        debug {
+            if (keystorePath != null) signingConfig = signingConfigs.getByName("fixed")
+        }
         release {
+            if (keystorePath != null) signingConfig = signingConfigs.getByName("fixed")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
