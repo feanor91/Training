@@ -45,10 +45,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.feanor91.treadmill.data.ScheduledItem
 import com.feanor91.treadmill.data.toWorkoutSteps
 import com.feanor91.treadmill.domain.ConnectionState
+import com.feanor91.treadmill.health.StepsToday
 import com.feanor91.treadmill.domain.MachineLimits
 import com.feanor91.treadmill.ui.components.ProfileChart
 import com.feanor91.treadmill.ui.components.containerViewModel
@@ -76,6 +78,7 @@ fun HomeScreen() {
     val watchConnected by vm.watchConnected.collectAsState()
     val watchName by vm.watchName.collectAsState()
     val watchHr by vm.watchHr.collectAsState()
+    val stepsToday by vm.steps.collectAsState()
     val today by vm.today.collectAsState()
     val devices by vm.devices.collectAsState()
     val scanTarget by vm.scanTarget.collectAsState()
@@ -120,6 +123,7 @@ fun HomeScreen() {
                 )
             }
             item { WatchCard(watchConnected, watchName, watchHr) }
+            if (!stepsToday.unavailable) item { StepsCard(stepsToday) }
             item { Text("Séances du jour", style = MaterialTheme.typography.titleMedium) }
             if (today.isEmpty()) {
                 item {
@@ -222,6 +226,39 @@ private fun StrapCard(name: String?, hr: Int?, onScan: () -> Unit, onDisconnect:
                 Text(hr?.let { "$it bpm" } ?: "Optionnel · sinon cardio du tapis", style = MaterialTheme.typography.bodySmall)
             }
             if (name == null) TextButton(onScan) { Text("Associer") } else TextButton(onDisconnect) { Text("Retirer") }
+        }
+    }
+}
+
+@Composable
+private fun StepsCard(s: StepsToday) {
+    val fmt = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT)
+    Card(Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("👣", style = MaterialTheme.typography.headlineMedium)
+            Spacer(Modifier.width(12.dp))
+            Column {
+                when {
+                    s.permissionMissing -> {
+                        Text("Pas du jour", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Autorisez la lecture des pas dans l'onglet Santé.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    s.count == null -> Text("Pas du jour : lecture en cours…", style = MaterialTheme.typography.titleSmall)
+                    else -> {
+                        Text(
+                            "%,d pas aujourd'hui".format(s.count),
+                            style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            "Health Connect (toutes vos applis) · mis à jour à ${fmt.format(java.util.Date(s.readAtMs))}",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
         }
     }
 }

@@ -7,7 +7,10 @@ import com.feanor91.treadmill.data.ScheduledItem
 import com.feanor91.treadmill.domain.BleDevice
 import com.feanor91.treadmill.domain.ConnectionState
 import com.feanor91.treadmill.domain.WorkoutStep
+import com.feanor91.treadmill.health.StepsToday
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +34,14 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
 
     val today: StateFlow<List<ScheduledItem>> =
         c.repository.today().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Pas du jour, relus toutes les 30 s tant que l'accueil est affiché. */
+    val steps: StateFlow<StepsToday> = flow {
+        while (true) {
+            emit(c.health.stepsToday())
+            delay(30_000)
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StepsToday())
 
     val devices = MutableStateFlow<List<BleDevice>>(emptyList())
     val scanTarget = MutableStateFlow<ScanTarget?>(null)

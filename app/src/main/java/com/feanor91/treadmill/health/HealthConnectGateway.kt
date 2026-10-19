@@ -78,6 +78,16 @@ data class BodyComposition(
     val hasAnything: Boolean get() = weightKg != null || bodyFatPct != null || restingHr != null || vo2Max != null || stepsToday != null
 }
 
+/** Pas du jour lus dans Health Connect (toutes applications confondues). */
+data class StepsToday(
+    val count: Long? = null,
+    /** La lecture des pas n'est pas autorisée. */
+    val permissionMissing: Boolean = false,
+    /** Health Connect indisponible sur cet appareil. */
+    val unavailable: Boolean = false,
+    val readAtMs: Long = 0,
+)
+
 /** Séance à exporter vers Health Connect. */
 data class ExportableSession(
     val title: String,
@@ -222,6 +232,18 @@ class HealthConnectGateway(private val context: Context) {
         val h = client.readRecords(ReadRecordsRequest(HeightRecord::class, before, ascendingOrder = false, pageSize = 1))
             .records.firstOrNull()?.height?.inMeters?.times(100.0)
         return w to h
+    }
+
+    /** Nombre de pas depuis minuit, agrégé par Health Connect (montre, téléphone, séances de l'application). */
+    suspend fun stepsToday(): StepsToday {
+        if (availability() != HcAvailability.Available) return StepsToday(unavailable = true)
+        if (HealthPermission.getReadPermission(StepsRecord::class) !in granted()) return StepsToday(permissionMissing = true)
+        return runCatching {
+            val start = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant()
+            val now = Instant.now()
+            val total = client.aggregate(AggregateRequest(setOf(StepsRecord.COUNT_TOTAL), TimeRangeFilter.between(start, now)))[StepsRecord.COUNT_TOTAL]
+            StepsToday(count = total ?: 0L, readAtMs = now.toEpochMilli())
+        }.getOrElse { StepsToday(unavailable = true) }
     }
 
     /** Dernières mesures de composition corporelle ; chaque champ absent ou non autorisé reste null. */
