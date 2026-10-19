@@ -98,7 +98,7 @@ fun WorkoutScreen() {
             }
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("🔥 ${ui.kcal} kcal", color = WorkoutColors.Incline, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-                Text("👣 %,d pas".format(ui.steps).replace(',', ' '), color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                Text("👣 %,d pas".format(ui.stepCount).replace(',', ' '), color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
                 if (!ui.isUnlimited) Text("${formatKm(ui.distanceM)} km", color = WorkoutColors.Dim, fontSize = 22.sp)
             }
             if (!ui.isUnlimited) {

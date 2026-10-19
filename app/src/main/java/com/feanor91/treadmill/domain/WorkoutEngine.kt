@@ -33,7 +33,7 @@ data class WorkoutUi(
     /** Dépense active estimée depuis le début de la séance. */
     val kcal: Int = 0,
     /** Pas estimés depuis le début de la séance. */
-    val steps: Int = 0,
+    val stepCount: Int = 0,
 ) {
     val currentStep: WorkoutStep? get() = steps.getOrNull(stepIndex)
     val nextStep: WorkoutStep? get() = steps.getOrNull(stepIndex + 1)
@@ -194,7 +194,7 @@ class WorkoutEngine(
         val remaining = if (step.durationSec == 0) 0 else u.stepRemainingSec - 1
         _ui.update {
             it.copy(
-                elapsedSec = it.elapsedSec + 1, kcal = kcalAcc.toInt(), steps = stepsAcc.toInt(), stepRemainingSec = remaining.coerceAtLeast(0),
+                elapsedSec = it.elapsedSec + 1, kcal = kcalAcc.toInt(), stepCount = stepsAcc.toInt(), stepRemainingSec = remaining.coerceAtLeast(0),
                 speedKmh = speed, inclinePct = incline, heartRate = hr, distanceM = dist,
             )
         }
