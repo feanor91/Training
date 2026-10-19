@@ -34,15 +34,20 @@ class TrainingRepository(private val db: AppDatabase) {
     suspend fun unschedule(item: ScheduleEntity) = dao.deleteSchedule(item)
     suspend fun deleteSession(id: Long) = dao.deleteSession(id)
 
-    suspend fun recordSession(s: SessionSummary) {
-        dao.insertSession(
+    /** Enregistre la séance et renvoie son id. */
+    suspend fun recordSession(s: SessionSummary): Long {
+        val id = dao.insertSession(
             SessionEntity(
                 planName = s.planName, startedAt = s.startedAt, durationSec = s.durationSec,
                 distanceM = s.distanceM, avgHr = s.avgHr, maxHr = s.maxHr, avgSpeedKmh = s.avgSpeedKmh,
+                activeKcal = s.activeKcal,
             ),
         )
         if (s.completed) s.scheduleId?.let { dao.markDone(it) }
+        return id
     }
+
+    suspend fun markExported(id: Long) = dao.markExported(id)
 
     /** Insère les plans par défaut absents (par nom) ; sans effet sur ceux déjà présents. */
     suspend fun seedDefaults() {

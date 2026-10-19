@@ -95,6 +95,10 @@ fun WorkoutScreen() {
                     color = WorkoutColors.Dim, fontSize = 44.sp,
                 )
             }
+            Text(
+                "${ui.kcal} kcal" + if (!ui.isUnlimited) " · ${formatKm(ui.distanceM)} km" else "",
+                color = WorkoutColors.Dim, fontSize = 16.sp,
+            )
             if (!ui.isUnlimited) {
                 LinearProgressIndicator(
                     progress = { (ui.elapsedSec.toFloat() / ui.totalSec).coerceIn(0f, 1f) },
@@ -179,7 +183,7 @@ fun WorkoutScreen() {
             text = {
                 Text(
                     "Durée ${formatClock(s.durationSec)}\nDistance ${formatKm(s.distanceM)} km\n" +
-                        "Vitesse moyenne ${formatSpeed(s.avgSpeedKmh)} km/h" +
+                        "Vitesse moyenne ${formatSpeed(s.avgSpeedKmh)} km/h\nDépense active ≈ ${s.activeKcal} kcal" +
                         if (s.avgHr > 0) "\nCardio moyen ${s.avgHr} · max ${s.maxHr} bpm" else "",
                     textAlign = TextAlign.Start,
                 )

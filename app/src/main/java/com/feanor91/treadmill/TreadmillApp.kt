@@ -6,6 +6,9 @@ import androidx.room.Room
 import com.feanor91.treadmill.ble.FtmsClient
 import com.feanor91.treadmill.ble.HeartRateClient
 import com.feanor91.treadmill.data.AppDatabase
+import com.feanor91.treadmill.data.ProfileStore
+import com.feanor91.treadmill.health.ExportableSession
+import com.feanor91.treadmill.health.HealthConnectGateway
 import com.feanor91.treadmill.data.TrainingRepository
 import com.feanor91.treadmill.domain.WorkoutEngine
 import kotlinx.coroutines.CoroutineScope
@@ -17,15 +20,32 @@ import kotlinx.coroutines.launch
 class AppContainer(app: Application) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    private val db = Room.databaseBuilder(app, AppDatabase::class.java, "training.db").build()
+    private val db = Room.databaseBuilder(app, AppDatabase::class.java, "training.db")
+        .addMigrations(AppDatabase.MIGRATION_1_2)
+        .build()
     val repository = TrainingRepository(db)
 
     val ftms = FtmsClient(app, scope)
     val heartRate = HeartRateClient(app)
 
-    val engine = WorkoutEngine(ftms, heartRate, scope) { summary ->
+    val profileStore = ProfileStore(app)
+    val health = HealthConnectGateway(app)
+
+    val engine = WorkoutEngine(ftms, heartRate, scope, profile = { profileStore.profile.value }) { summary ->
         // Les sorties trop courtes (< 30 s) ne polluent pas l'historique.
-        if (summary.durationSec >= 30) repository.recordSession(summary)
+        if (summary.durationSec >= 30) {
+            val id = repository.recordSession(summary)
+            // Export automatique si Health Connect est autorisé ; sinon réessayable depuis l'historique.
+            runCatching {
+                val ok = health.export(
+                    ExportableSession(
+                        summary.planName, summary.startedAt, summary.durationSec, summary.distanceM,
+                        summary.activeKcal, summary.avgSpeedKmh, summary.samples,
+                    ),
+                )
+                if (ok) repository.markExported(id)
+            }
+        }
     }
 
     init {

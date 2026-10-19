@@ -8,6 +8,8 @@ import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
 import androidx.room.Update
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -43,13 +45,23 @@ interface TrainingDao {
 
     @Insert suspend fun insertSession(s: SessionEntity): Long
     @Query("DELETE FROM sessions WHERE id = :id") suspend fun deleteSession(id: Long)
+    @Query("UPDATE sessions SET exported = 1 WHERE id = :id") suspend fun markExported(id: Long)
 }
 
 @Database(
     entities = [PlanEntity::class, StepEntity::class, ScheduleEntity::class, SessionEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): TrainingDao
+
+    companion object {
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sessions ADD COLUMN activeKcal INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE sessions ADD COLUMN exported INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+    }
 }

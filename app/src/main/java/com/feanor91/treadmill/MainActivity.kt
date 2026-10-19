@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DirectionsRun
 import androidx.compose.material.icons.filled.EventNote
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -31,6 +32,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.feanor91.treadmill.domain.WorkoutState
 import com.feanor91.treadmill.ui.components.appContainer
+import com.feanor91.treadmill.ui.health.HealthScreen
 import com.feanor91.treadmill.ui.history.HistoryScreen
 import com.feanor91.treadmill.ui.home.HomeScreen
 import com.feanor91.treadmill.ui.planner.PlanEditorScreen
@@ -49,6 +51,7 @@ class MainActivity : ComponentActivity() {
 private enum class Tab(val route: String, val label: String, val icon: ImageVector) {
     Home("home", "Aujourd'hui", Icons.Default.DirectionsRun),
     Planner("planner", "Plans", Icons.Default.EventNote),
+    Health("health", "Santé", Icons.Default.Favorite),
     History("history", "Historique", Icons.Default.History),
 }
 
@@ -96,6 +99,7 @@ private fun AppNav() {
         NavHost(nav, startDestination = Tab.Home.route, modifier = Modifier.padding(bottom = if (showBar) padding.calculateBottomPadding() else 0.dp)) {
             composable(Tab.Home.route) { HomeScreen() }
             composable(Tab.Planner.route) { PlannerScreen(onEditPlan = { nav.navigate("editor/$it") }) }
+            composable(Tab.Health.route) { HealthScreen() }
             composable(Tab.History.route) { HistoryScreen() }
             composable(EDITOR, listOf(navArgument("planId") { type = NavType.LongType })) {
                 PlanEditorScreen(it.arguments?.getLong("planId") ?: 0L, onClose = { nav.popBackStack() })

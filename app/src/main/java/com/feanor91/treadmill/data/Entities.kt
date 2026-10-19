@@ -52,6 +52,8 @@ data class SessionEntity(
     val avgHr: Int,
     val maxHr: Int,
     val avgSpeedKmh: Double,
+    val activeKcal: Int = 0,
+    val exported: Boolean = false,
 )
 
 data class PlanWithSteps(

@@ -56,4 +56,10 @@ data class SessionSummary(
     val avgSpeedKmh: Double,
     val scheduleId: Long?,
     val completed: Boolean,
+    /** Dépense active estimée (hors métabolisme de repos). */
+    val activeKcal: Int = 0,
+    /** Échantillons (toutes les 5 s) pour l'export Health Connect ; non persistés. */
+    val samples: List<Sample> = emptyList(),
 )
+
+data class Sample(val timeMs: Long, val heartRate: Int?, val speedKmh: Double)

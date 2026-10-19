@@ -19,6 +19,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -30,6 +31,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.feanor91.treadmill.AppContainer
 import com.feanor91.treadmill.data.SessionEntity
+import com.feanor91.treadmill.health.ExportableSession
 import com.feanor91.treadmill.ui.components.containerViewModel
 import com.feanor91.treadmill.ui.formatClock
 import com.feanor91.treadmill.ui.formatKm
@@ -42,6 +44,19 @@ import java.text.DateFormat
 import java.util.Date
 
 class HistoryViewModel(private val c: AppContainer) : ViewModel() {
+    val message = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
+    /** Réessaie l'export d'une séance (agrégats seulement : pas de courbes cardio/vitesse). */
+    fun export(s: SessionEntity) = viewModelScope.launch {
+        message.value = runCatching {
+            val ok = c.health.export(
+                ExportableSession(s.planName, s.startedAt, s.durationSec, s.distanceM, s.activeKcal, s.avgSpeedKmh),
+            )
+            if (ok) { c.repository.markExported(s.id); "Séance envoyée à Health Connect." }
+            else "Autorisez d'abord Health Connect dans l'onglet Santé."
+        }.getOrElse { "Export impossible : ${it.message}" }
+    }
+
     val sessions: StateFlow<List<SessionEntity>> =
         c.repository.sessions.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -52,6 +67,7 @@ class HistoryViewModel(private val c: AppContainer) : ViewModel() {
 fun HistoryScreen() {
     val vm = containerViewModel { HistoryViewModel(it) }
     val sessions by vm.sessions.collectAsState()
+    val message by vm.message.collectAsState()
     val fmt = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
 
     Scaffold(topBar = { TopAppBar(title = { Text("Historique") }) }) { padding ->
@@ -69,6 +85,7 @@ fun HistoryScreen() {
                     }
                 }
             }
+            message?.let { item { Text(it, style = MaterialTheme.typography.bodySmall) } }
             if (sessions.isEmpty()) item { Text("Aucune séance enregistrée pour le moment.") }
             items(sessions, key = { it.id }) { s ->
                 Card(Modifier.fillMaxWidth()) {
@@ -80,6 +97,9 @@ fun HistoryScreen() {
                                 "${formatClock(s.durationSec)} · ${formatKm(s.distanceM)} km · ${formatSpeed(s.avgSpeedKmh)} km/h moy." +
                                     if (s.avgHr > 0) " · ♥ ${s.avgHr}/${s.maxHr}" else "",
                             )
+                            if (s.activeKcal > 0) Text("≈ ${s.activeKcal} kcal actives")
+                            if (s.exported) Text("✓ Health Connect", style = MaterialTheme.typography.bodySmall)
+                            else TextButton({ vm.export(s) }) { Text("Envoyer à Health Connect") }
                         }
                         IconButton({ vm.delete(s.id) }) { Icon(Icons.Default.Delete, "Supprimer") }
                     }
