@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Treadmill FTMS</string>
+    <string name="notif_channel">Séance en cours</string>
+</resources>
