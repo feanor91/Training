@@ -66,7 +66,8 @@ Prérequis : JDK 17 et Android SDK (API 35).
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Le workflow GitHub Actions (`.github/workflows/android.yml`) produit l'APK en artefact **et** le publie dans une Release GitHub (`treadmill-ftms.apk`, lien direct depuis le téléphone) à chaque push.
+Le workflow GitHub Actions (`.github/workflows/android.yml`) produit l'APK en artefact et le publie dans une Release GitHub à chaque push. Liens permanents vers la dernière version :
+`https://github.com/feanor91/Training/releases/latest/download/treadmill-ftms.apk` (téléphone) et `.../treadmill-ftms-montre.apk` (montre).
 Autorisations demandées au premier scan : Bluetooth (Android 12+) ou Localisation (Android 7–11, exigée par le scan BLE), notifications (Android 13+).
 
 ## Compatibilité tapis
