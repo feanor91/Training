@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.feanor91.treadmill"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.feanor91.treadmill"
