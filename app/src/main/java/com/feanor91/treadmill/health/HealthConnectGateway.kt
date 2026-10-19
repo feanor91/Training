@@ -7,6 +7,13 @@ import androidx.health.connect.client.aggregate.AggregationResult
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.BasalMetabolicRateRecord
+import androidx.health.connect.client.records.BodyFatRecord
+import androidx.health.connect.client.records.BodyWaterMassRecord
+import androidx.health.connect.client.records.BoneMassRecord
+import androidx.health.connect.client.records.LeanBodyMassRecord
+import androidx.health.connect.client.records.RestingHeartRateRecord
+import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
@@ -23,8 +30,6 @@ import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.health.connect.client.units.Energy
 import androidx.health.connect.client.units.Length
 import androidx.health.connect.client.units.Velocity
-import com.feanor91.treadmill.domain.Calories
-import com.feanor91.treadmill.domain.UserProfile
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -47,6 +52,32 @@ data class DayBalance(
     val deficitKcal: Double? get() = intakeKcal?.let { burnedKcal - it }
 }
 
+/** Composition corporelle et indicateurs lus dans Health Connect. */
+data class BodyComposition(
+    val weightKg: Double? = null,
+    val weightAt: Instant? = null,
+    val heightCm: Double? = null,
+    val bodyFatPct: Double? = null,
+    val bodyFatAt: Instant? = null,
+    val leanMassKg: Double? = null,
+    val boneMassKg: Double? = null,
+    val bodyWaterKg: Double? = null,
+    val bmrKcalPerDay: Double? = null,
+    val restingHr: Int? = null,
+    val vo2Max: Double? = null,
+    val stepsToday: Long? = null,
+    /** Pesées des 90 derniers jours, de la plus ancienne à la plus récente. */
+    val weightSeries: List<Pair<Instant, Double>> = emptyList(),
+) {
+    val bmi: Double? get() = if (weightKg != null && heightCm != null && heightCm > 0) weightKg / ((heightCm / 100.0) * (heightCm / 100.0)) else null
+    val fatMassKg: Double? get() = if (weightKg != null && bodyFatPct != null) weightKg * bodyFatPct / 100.0 else null
+
+    /** Masse maigre mesurée, sinon déduite du poids et du taux de graisse. */
+    val leanOrDerivedKg: Double? get() = leanMassKg ?: fatMassKg?.let { weightKg?.minus(it) }
+    val leanIsDerived: Boolean get() = leanMassKg == null && leanOrDerivedKg != null
+    val hasAnything: Boolean get() = weightKg != null || bodyFatPct != null || restingHr != null || vo2Max != null || stepsToday != null
+}
+
 /** Séance à exporter vers Health Connect. */
 data class ExportableSession(
     val title: String,
@@ -64,7 +95,8 @@ data class ExportableSession(
  */
 class HealthConnectGateway(private val context: Context) {
 
-    val permissions: Set<String> = setOf(
+    /** Accès de base : séances, calories, bilan, poids et taille. */
+    val corePermissions: Set<String> = setOf(
         HealthPermission.getWritePermission(ExerciseSessionRecord::class),
         HealthPermission.getWritePermission(DistanceRecord::class),
         HealthPermission.getWritePermission(ActiveCaloriesBurnedRecord::class),
@@ -77,6 +109,19 @@ class HealthConnectGateway(private val context: Context) {
         HealthPermission.getReadPermission(WeightRecord::class),
         HealthPermission.getReadPermission(HeightRecord::class),
     )
+
+    /** Composition corporelle et indicateurs de forme (ajoutés après la première version). */
+    val bodyPermissions: Set<String> = setOf(
+        HealthPermission.getReadPermission(BodyFatRecord::class),
+        HealthPermission.getReadPermission(LeanBodyMassRecord::class),
+        HealthPermission.getReadPermission(BoneMassRecord::class),
+        HealthPermission.getReadPermission(BodyWaterMassRecord::class),
+        HealthPermission.getReadPermission(RestingHeartRateRecord::class),
+        HealthPermission.getReadPermission(Vo2MaxRecord::class),
+        HealthPermission.getReadPermission(StepsRecord::class),
+    )
+
+    val permissions: Set<String> = corePermissions + bodyPermissions
 
     private val writePermissions = permissions.filter { it.contains("WRITE") }.toSet()
 
@@ -132,7 +177,7 @@ class HealthConnectGateway(private val context: Context) {
     }
 
     /** Bilan de la journée [date] ; pour aujourd'hui, le métabolisme de repos est proratisé à l'heure courante. */
-    suspend fun dayBalance(date: LocalDate, profile: UserProfile): DayBalance {
+    suspend fun dayBalance(date: LocalDate, bmrPerDay: Double): DayBalance {
         val zone = ZoneId.systemDefault()
         val start = date.atStartOfDay(zone).toInstant()
         val fullEnd = date.plusDays(1).atStartOfDay(zone).toInstant()
@@ -151,7 +196,7 @@ class HealthConnectGateway(private val context: Context) {
         )
         val dayFraction = Duration.between(start, end).seconds / Duration.between(start, fullEnd).seconds.toDouble()
         val basal = agg[BasalMetabolicRateRecord.BASAL_CALORIES_TOTAL]?.inKilocalories?.takeIf { it > 0 }
-            ?: (Calories.bmrPerDay(profile) * dayFraction)
+            ?: (bmrPerDay * dayFraction)
         return DayBalance(
             date = date,
             intakeKcal = agg[NutritionRecord.ENERGY_TOTAL]?.inKilocalories?.takeIf { it > 0 },
@@ -169,5 +214,56 @@ class HealthConnectGateway(private val context: Context) {
         val h = client.readRecords(ReadRecordsRequest(HeightRecord::class, before, ascendingOrder = false, pageSize = 1))
             .records.firstOrNull()?.height?.inMeters?.times(100.0)
         return w to h
+    }
+
+    /** Dernières mesures de composition corporelle ; chaque champ absent ou non autorisé reste null. */
+    suspend fun bodyComposition(): BodyComposition {
+        val now = Instant.now()
+        val before = TimeRangeFilter.before(now)
+
+        suspend fun <T : androidx.health.connect.client.records.Record> latest(type: kotlin.reflect.KClass<T>): T? =
+            runCatching {
+                client.readRecords(ReadRecordsRequest(type, before, ascendingOrder = false, pageSize = 1)).records.firstOrNull()
+            }.getOrNull()
+
+        val weight = latest(WeightRecord::class)
+        val height = latest(HeightRecord::class)
+        val fat = latest(BodyFatRecord::class)
+        val lean = latest(LeanBodyMassRecord::class)
+        val bone = latest(BoneMassRecord::class)
+        val water = latest(BodyWaterMassRecord::class)
+        val bmr = latest(BasalMetabolicRateRecord::class)
+        val resting = latest(RestingHeartRateRecord::class)
+        val vo2 = latest(Vo2MaxRecord::class)
+
+        val series = runCatching {
+            client.readRecords(
+                ReadRecordsRequest(
+                    WeightRecord::class,
+                    TimeRangeFilter.between(now.minus(Duration.ofDays(90)), now),
+                    ascendingOrder = true,
+                    pageSize = 500,
+                ),
+            ).records.map { it.time to it.weight.inKilograms }
+        }.getOrDefault(emptyList())
+
+        val steps = runCatching {
+            val start = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant()
+            client.aggregate(AggregateRequest(setOf(StepsRecord.COUNT_TOTAL), TimeRangeFilter.between(start, now)))[StepsRecord.COUNT_TOTAL]
+        }.getOrNull()
+
+        return BodyComposition(
+            weightKg = weight?.weight?.inKilograms, weightAt = weight?.time,
+            heightCm = height?.height?.inMeters?.times(100.0),
+            bodyFatPct = fat?.percentage?.value, bodyFatAt = fat?.time,
+            leanMassKg = lean?.mass?.inKilograms,
+            boneMassKg = bone?.mass?.inKilograms,
+            bodyWaterKg = water?.mass?.inKilograms,
+            bmrKcalPerDay = bmr?.basalMetabolicRate?.inKilocaloriesPerDay,
+            restingHr = resting?.beatsPerMinute?.toInt(),
+            vo2Max = vo2?.vo2MillilitersPerMinuteKilogram,
+            stepsToday = steps,
+            weightSeries = series,
+        )
     }
 }

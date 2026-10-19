@@ -22,6 +22,15 @@ class ProfileStore(context: Context) {
     )
     val profile: StateFlow<UserProfile> = _profile.asStateFlow()
 
+    private val _useHealthConnect = MutableStateFlow(prefs.getBoolean("useHealthConnect", true))
+    /** Si vrai, poids et taille suivent Health Connect (dernière mesure) à chaque ouverture de l'onglet Santé. */
+    val useHealthConnect: StateFlow<Boolean> = _useHealthConnect.asStateFlow()
+
+    fun setUseHealthConnect(value: Boolean) {
+        _useHealthConnect.value = value
+        prefs.edit().putBoolean("useHealthConnect", value).apply()
+    }
+
     fun update(transform: (UserProfile) -> UserProfile) {
         val p = transform(_profile.value).let {
             it.copy(weightKg = it.weightKg.coerceIn(30.0, 300.0), heightCm = it.heightCm.coerceIn(120.0, 230.0), age = it.age.coerceIn(10, 110))

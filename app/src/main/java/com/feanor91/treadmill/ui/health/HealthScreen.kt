@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
@@ -33,9 +34,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
 import com.feanor91.treadmill.domain.Sex
+import com.feanor91.treadmill.health.BodyComposition
 import com.feanor91.treadmill.health.DayBalance
 import com.feanor91.treadmill.health.HcAvailability
 import com.feanor91.treadmill.ui.components.containerViewModel
+import java.time.Instant
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import kotlin.math.roundToInt
@@ -48,6 +52,7 @@ fun HealthScreen() {
     val vm = containerViewModel { HealthViewModel(it) }
     val ui by vm.ui.collectAsState()
     val profile by vm.profile.collectAsState()
+    val useHc by vm.useHealthConnect.collectAsState()
     val context = LocalContext.current
     val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         PermissionController.createRequestPermissionResultContract(),
@@ -74,12 +79,20 @@ fun HealthScreen() {
                                     )
                                 }) { Text("Ouvrir le Play Store") }
                             }
-                            !ui.permissionsGranted -> {
+                            !ui.coreGranted -> {
                                 Text(
                                     "Autorisez l'accès pour envoyer vos séances (distance, vitesse, cardio, calories) " +
                                         "et lire les calories de vos autres applications.",
                                 )
                                 Button({ permissionLauncher.launch(vm.permissions) }) { Text("Autoriser Health Connect") }
+                            }
+                            !ui.bodyGranted -> {
+                                Text("Connecté : vos séances sont envoyées automatiquement.", color = Good)
+                                Text(
+                                    "Nouveau : autorisez aussi la lecture de la composition corporelle (masse grasse, masse maigre, " +
+                                        "eau, os), du cardio au repos, de la VO2 max et des pas.",
+                                )
+                                Button({ permissionLauncher.launch(vm.permissions) }) { Text("Autoriser la composition corporelle") }
                             }
                             else -> Text("Connecté : vos séances sont envoyées automatiquement.", color = Good)
                         }
@@ -88,7 +101,8 @@ fun HealthScreen() {
                 }
             }
 
-            if (ui.permissionsGranted && ui.days.isNotEmpty()) {
+            if (ui.coreGranted && ui.body.hasAnything) item { BodyCard(ui.body) }
+            if (ui.coreGranted && ui.days.isNotEmpty()) {
                 item { TodayCard(ui.days.first()) }
                 item { WeekCard(ui.days) }
             } else if (ui.loading) {
@@ -113,8 +127,11 @@ fun HealthScreen() {
                             FilterChip(profile.sex == Sex.Male, { vm.updateProfile { it.copy(sex = Sex.Male) } }, { Text("Homme") })
                             FilterChip(profile.sex == Sex.Female, { vm.updateProfile { it.copy(sex = Sex.Female) } }, { Text("Femme") })
                         }
-                        if (ui.permissionsGranted) {
-                            OutlinedButton(vm::importBody) { Text("Importer poids et taille depuis Health Connect") }
+                        if (ui.coreGranted) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Poids et taille depuis Health Connect", Modifier.weight(1f))
+                                androidx.compose.material3.Switch(useHc, vm::setUseHealthConnect)
+                            }
                         }
                         Text(
                             "Dépense active estimée avec les équations ACSM (marche / course sur tapis) ; " +
@@ -125,6 +142,78 @@ fun HealthScreen() {
                 }
             }
         }
+    }
+}
+
+private fun oms(bmi: Double) = when {
+    bmi < 18.5 -> "insuffisance pondérale"
+    bmi < 25 -> "corpulence normale"
+    bmi < 30 -> "surpoids"
+    bmi < 35 -> "obésité modérée"
+    bmi < 40 -> "obésité sévère"
+    else -> "obésité massive"
+}
+
+@Composable
+private fun BodyCard(b: BodyComposition) {
+    val dateFmt = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
+    fun Instant?.asDate() = this?.let { " (${it.atZone(ZoneId.systemDefault()).toLocalDate().format(dateFmt)})" } ?: ""
+    fun kg(v: Double) = "${"%.1f".format(v)} kg"
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Composition corporelle", style = MaterialTheme.typography.titleMedium)
+            b.weightKg?.let { Line("Poids" + b.weightAt.asDate(), kg(it)) }
+            b.bmi?.let { Line("IMC", "${"%.1f".format(it)} · ${oms(it)}") }
+            b.bodyFatPct?.let { Line("Masse grasse" + b.bodyFatAt.asDate(), "${"%.1f".format(it)} %") }
+            b.fatMassKg?.let { Line("  soit", kg(it)) }
+            b.leanOrDerivedKg?.let {
+                Line(if (b.leanIsDerived) "Masse maigre (calculée)" else "Masse maigre", kg(it))
+            }
+            b.leanOrDerivedKg?.let { lean -> b.weightKg?.let { w -> Line("  soit", "${"%.1f".format(lean / w * 100)} % du poids") } }
+            b.bodyWaterKg?.let { Line("Eau corporelle", kg(it)) }
+            b.boneMassKg?.let { Line("Masse osseuse", kg(it)) }
+            b.bmrKcalPerDay?.let { Line("Métabolisme de base mesuré", "${it.roundToInt()} kcal/j") }
+            if (b.restingHr != null || b.vo2Max != null || b.stepsToday != null) HorizontalDivider()
+            b.restingHr?.let { Line("Cardio au repos", "$it bpm") }
+            b.vo2Max?.let { Line("VO2 max", "${"%.1f".format(it)} ml/kg/min") }
+            b.stepsToday?.let { Line("Pas aujourd'hui", "$it") }
+            if (b.weightSeries.size >= 2) {
+                HorizontalDivider()
+                Text("Poids sur 90 jours", style = MaterialTheme.typography.labelLarge)
+                WeightChart(b.weightSeries.map { it.second })
+                val delta = b.weightSeries.last().second - b.weightSeries.first().second
+                Text(
+                    (if (delta <= 0) "−" else "+") + "${"%.1f".format(kotlin.math.abs(delta))} kg depuis ${
+                        b.weightSeries.first().first.atZone(ZoneId.systemDefault()).toLocalDate().format(dateFmt)
+                    }",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Text(
+                "Health Connect ne contient pas de masse musculaire squelettique : la masse maigre (muscles, os et eau) " +
+                    "est la donnée la plus proche. Selon les applications, certaines valeurs peuvent être absentes.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun WeightChart(values: List<Double>) {
+    val line = MaterialTheme.colorScheme.primary
+    androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(64.dp)) {
+        val min = values.min()
+        val max = values.max()
+        val span = (max - min).coerceAtLeast(0.5)
+        val dx = size.width / (values.size - 1)
+        val path = androidx.compose.ui.graphics.Path()
+        values.forEachIndexed { i, v ->
+            val x = i * dx
+            val y = size.height - ((v - min) / span).toFloat() * size.height
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        drawPath(path, line, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 4f))
     }
 }
 
