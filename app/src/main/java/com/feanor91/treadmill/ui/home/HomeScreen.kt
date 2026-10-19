@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothConnected
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Watch
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -72,6 +73,9 @@ fun HomeScreen() {
     val error by vm.ftmsError.collectAsState()
     val strapName by vm.strapName.collectAsState()
     val strapHr by vm.strapHr.collectAsState()
+    val watchConnected by vm.watchConnected.collectAsState()
+    val watchName by vm.watchName.collectAsState()
+    val watchHr by vm.watchHr.collectAsState()
     val today by vm.today.collectAsState()
     val devices by vm.devices.collectAsState()
     val scanTarget by vm.scanTarget.collectAsState()
@@ -115,6 +119,7 @@ fun HomeScreen() {
                     onScan = { requestScan(ScanTarget.HeartRate) }, onDisconnect = vm::disconnectStrap,
                 )
             }
+            item { WatchCard(watchConnected, watchName, watchHr) }
             item { Text("Séances du jour", style = MaterialTheme.typography.titleMedium) }
             if (today.isEmpty()) {
                 item {
@@ -217,6 +222,27 @@ private fun StrapCard(name: String?, hr: Int?, onScan: () -> Unit, onDisconnect:
                 Text(hr?.let { "$it bpm" } ?: "Optionnel · sinon cardio du tapis", style = MaterialTheme.typography.bodySmall)
             }
             if (name == null) TextButton(onScan) { Text("Associer") } else TextButton(onDisconnect) { Text("Retirer") }
+        }
+    }
+}
+
+@Composable
+private fun WatchCard(connected: Boolean, name: String?, hr: Int?) {
+    Card(Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Watch, null)
+            Spacer(Modifier.width(8.dp))
+            Column {
+                Text(if (connected) (name ?: "Montre") else "Montre", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    when {
+                        hr != null -> "$hr bpm (mesure en direct)"
+                        connected -> "Connectée · ouvrez l'appli sur la montre pendant la séance"
+                        else -> "Non détectée · installez l'appli compagnon sur la montre"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
         }
     }
 }

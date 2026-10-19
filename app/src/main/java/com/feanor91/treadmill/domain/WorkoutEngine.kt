@@ -1,7 +1,6 @@
 package com.feanor91.treadmill.domain
 
 import com.feanor91.treadmill.ble.FtmsClient
-import com.feanor91.treadmill.ble.HeartRateClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -45,7 +44,8 @@ data class WorkoutUi(
  */
 class WorkoutEngine(
     private val ftms: FtmsClient,
-    private val heartRate: HeartRateClient,
+    /** Cardio externe (ceinture, montre) ; le cardio du tapis sert de repli. */
+    private val externalHeartRate: () -> Int?,
     private val scope: CoroutineScope,
     private val profile: () -> UserProfile,
     private val onFinished: suspend (SessionSummary) -> Unit,
@@ -176,7 +176,7 @@ class WorkoutEngine(
         val simulated = ftms.state.value != ConnectionState.Ready
         val speed = if (simulated) u.targetSpeed else m.speedKmh ?: 0.0
         val incline = if (simulated) u.targetIncline else m.inclinePct ?: u.targetIncline
-        val hr = heartRate.heartRate.value ?: m.heartRate
+        val hr = externalHeartRate() ?: m.heartRate
 
         kcalAcc += Calories.activeKcalPerMin(speed, incline, profile().weightKg) / 60.0
         integratedM += speed / 3.6

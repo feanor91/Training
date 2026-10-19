@@ -9,6 +9,7 @@ import com.feanor91.treadmill.data.AppDatabase
 import com.feanor91.treadmill.data.ProfileStore
 import com.feanor91.treadmill.health.ExportableSession
 import com.feanor91.treadmill.health.HealthConnectGateway
+import com.feanor91.treadmill.wear.WearBridge
 import com.feanor91.treadmill.data.TrainingRepository
 import com.feanor91.treadmill.domain.WorkoutEngine
 import kotlinx.coroutines.CoroutineScope
@@ -31,7 +32,12 @@ class AppContainer(app: Application) {
     val profileStore = ProfileStore(app)
     val health = HealthConnectGateway(app)
 
-    val engine = WorkoutEngine(ftms, heartRate, scope, profile = { profileStore.profile.value }) { summary ->
+    val wear = WearBridge(app, scope)
+
+    val engine = WorkoutEngine(
+        ftms, externalHeartRate = { heartRate.heartRate.value ?: wear.watchHr.value }, scope,
+        profile = { profileStore.profile.value },
+    ) { summary ->
         // Les sorties trop courtes (< 30 s) ne polluent pas l'historique.
         if (summary.durationSec >= 30) {
             val id = repository.recordSession(summary)
@@ -49,6 +55,7 @@ class AppContainer(app: Application) {
     }
 
     init {
+        wear.attach(engine)
         val prefs = app.getSharedPreferences("app", Context.MODE_PRIVATE)
         if (prefs.getInt("seedVersion", 0) < SEED_VERSION) {
             scope.launch {

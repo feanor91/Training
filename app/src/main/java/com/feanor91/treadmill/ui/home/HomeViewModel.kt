@@ -25,6 +25,9 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     val ftmsError = c.ftms.error
     val strapName = c.heartRate.deviceName
     val strapHr = c.heartRate.heartRate
+    val watchConnected = c.wear.watchConnected
+    val watchName = c.wear.watchName
+    val watchHr = c.wear.watchHr
 
     val today: StateFlow<List<ScheduledItem>> =
         c.repository.today().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

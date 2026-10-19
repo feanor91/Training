@@ -14,4 +14,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "TreadmillFtms"
-include(":app")
+include(":app", ":wear")

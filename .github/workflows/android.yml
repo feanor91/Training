@@ -47,7 +47,9 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
       - name: Renommer l'APK
         if: github.event_name == 'push'
-        run: cp app/build/outputs/apk/debug/app-debug.apk treadmill-ftms.apk
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk treadmill-ftms.apk
+          cp wear/build/outputs/apk/debug/wear-debug.apk treadmill-ftms-montre.apk
       - name: Publier dans une Release (lien direct)
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
@@ -56,4 +58,6 @@ jobs:
           name: Build ${{ github.run_number }}
           target_commitish: ${{ github.sha }}
           prerelease: true
-          files: treadmill-ftms.apk
+          files: |
+            treadmill-ftms.apk
+            treadmill-ftms-montre.apk
