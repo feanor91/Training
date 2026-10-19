@@ -129,6 +129,14 @@ fun HealthScreen() {
                             FilterChip(profile.sex == Sex.Male, { vm.updateProfile { it.copy(sex = Sex.Male) } }, { Text("Homme") })
                             FilterChip(profile.sex == Sex.Female, { vm.updateProfile { it.copy(sex = Sex.Female) } }, { Text("Femme") })
                         }
+                        ProfileRow("Correction calories", "× ${"%.2f".format(profile.calorieFactor)}",
+                            { vm.updateProfile { it.copy(calorieFactor = it.calorieFactor - 0.05) } },
+                            { vm.updateProfile { it.copy(calorieFactor = it.calorieFactor + 0.05) } })
+                        Text(
+                            "Si l'appli affiche moins (ou plus) que votre tapis, ajustez ce coefficient. " +
+                                "Vous pouvez aussi toucher « Caler l'appli sur le tapis » à la fin d'une séance.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                         HeartZonesBlock(profile, onMinus = {
                             vm.updateProfile { p -> p.copy(maxHrOverride = HeartZones.maxHr(p) - 1) }
                         }, onPlus = {

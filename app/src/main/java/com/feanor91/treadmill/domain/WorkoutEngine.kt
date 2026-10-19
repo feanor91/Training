@@ -59,7 +59,8 @@ class WorkoutEngine(
     val ui: StateFlow<WorkoutUi> = _ui.asStateFlow()
 
     private companion object {
-        const val COUNTDOWN_SEC = 5
+        /** Même durée que le compte à rebours interne du tapis, qui démarre dès l'envoi de la commande Start. */
+        const val COUNTDOWN_SEC = 3
         const val SAMPLE_EVERY_SEC = 5
     }
 
@@ -67,6 +68,7 @@ class WorkoutEngine(
     private var scheduleId: Long? = null
     private var startedAt = 0L
     private var distanceBase: Int? = null
+    private var energyBase: Int? = null
     private var integratedM = 0.0
     private var speedSum = 0.0
     private var speedN = 0
@@ -96,14 +98,19 @@ class WorkoutEngine(
             countdownSec = COUNTDOWN_SEC,
         )
         job = scope.launch {
+            // Le tapis fait son propre compte à rebours après Start : on l'envoie tout de suite et on affiche
+            // le décompte en parallèle ; la vitesse du premier palier n'est envoyée qu'une fois le tapis parti.
+            launch {
+                ftms.requestControl()
+                ftms.start()
+            }
             for (n in COUNTDOWN_SEC downTo 1) {
                 _ui.update { it.copy(countdownSec = n) }
                 delay(1_000)
             }
             _ui.update { it.copy(countdownSec = 0) }
             startedAt = System.currentTimeMillis()
-            ftms.requestControl()
-            ftms.start()
+            energyBase = ftms.metrics.value.energyKcal
             enterStep(0)
             while (isActive) {
                 delay(1_000)
@@ -131,8 +138,9 @@ class WorkoutEngine(
     fun stop() {
         if (!running) return
         if (_ui.value.countdownSec > 0) {
-            // Annulation avant le départ : le tapis n'a pas été sollicité, rien à enregistrer.
+            // Annulation pendant le décompte : le tapis a déjà reçu Start, on l'arrête ; rien à enregistrer.
             job?.cancel()
+            scope.launch { ftms.stop() }
             _ui.value = WorkoutUi()
         } else {
             finish(completed = false)
@@ -189,7 +197,7 @@ class WorkoutEngine(
         val incline = if (simulated) u.targetIncline else m.inclinePct ?: u.targetIncline
         val hr = externalHeartRate() ?: m.heartRate
 
-        kcalAcc += Calories.activeKcalPerMin(speed, incline, profile().weightKg) / 60.0
+        kcalAcc += Calories.activeKcalPerMin(speed, incline, profile().weightKg) * profile().calorieFactor / 60.0
         stepsAcc += Calories.stepsPerSecond(speed, profile().heightCm)
         integratedM += speed / 3.6
         speedSum += speed; speedN++
@@ -245,6 +253,13 @@ class WorkoutEngine(
         }
     }
 
+    /** Calories vues par le tapis depuis le départ de la séance ; le tapis remet parfois son compteur à zéro au Start. */
+    private fun deviceKcal(): Int? {
+        val now = ftms.metrics.value.energyKcal ?: return null
+        val base = energyBase ?: 0
+        return if (now >= base) now - base else now
+    }
+
     private fun finish(completed: Boolean) {
         job?.cancel()
         val u = _ui.value
@@ -254,7 +269,7 @@ class WorkoutEngine(
             avgSpeedKmh = if (speedN > 0) speedSum / speedN else 0.0,
             scheduleId = scheduleId, completed = completed,
             activeKcal = kcalAcc.toInt(), steps = stepsAcc.toInt(), samples = samples.toList(),
-            zoneSeconds = zoneSeconds.toList(),
+            zoneSeconds = zoneSeconds.toList(), deviceKcal = deviceKcal(),
         )
         _ui.update { it.copy(state = WorkoutState.Finished, summary = summary, speedKmh = 0.0) }
         scope.launch {

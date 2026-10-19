@@ -60,7 +60,9 @@ import com.feanor91.treadmill.ui.theme.WorkoutColors
 fun WorkoutScreen() {
     val engine = appContainer().engine
     val ui by engine.ui.collectAsState()
-    val exportStatus by appContainer().exportStatus.collectAsState()
+    val container = appContainer()
+    val exportStatus by container.exportStatus.collectAsState()
+    var calibrated by remember { mutableStateOf(false) }
     var confirmStop by remember { mutableStateOf(false) }
 
     KeepScreenOn()
@@ -194,6 +196,15 @@ fun WorkoutScreen() {
                         if (s.avgHr > 0) "\nCardio moyen ${s.avgHr} · max ${s.maxHr} bpm" else "",
                     textAlign = TextAlign.Start,
                 )
+                s.deviceKcal?.takeIf { it > 0 }?.let { dev ->
+                    Text("\nCalories affichées par le tapis : $dev kcal (appli : ${s.activeKcal} kcal)")
+                    if (s.activeKcal >= 20 && dev >= 20 && kotlin.math.abs(dev.toDouble() / s.activeKcal - 1.0) > 0.03) {
+                        TextButton({
+                            container.profileStore.update { p -> p.copy(calorieFactor = p.calorieFactor * dev / s.activeKcal) }
+                            calibrated = true
+                        }, enabled = !calibrated) { Text(if (calibrated) "Calcul ajusté pour les prochaines séances" else "Caler l'appli sur le tapis") }
+                    }
+                }
                 exportStatus?.let { Text("\n$it", fontWeight = FontWeight.Medium) }
                 }
             },

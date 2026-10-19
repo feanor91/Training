@@ -10,6 +10,8 @@ data class UserProfile(
     val sex: Sex = Sex.Male,
     /** Fréquence cardiaque maximale saisie ; null = estimée à partir de l'âge. */
     val maxHrOverride: Int? = null,
+    /** Coefficient de correction des calories (1,00 = estimation brute), pour caler l'appli sur le tapis. */
+    val calorieFactor: Double = 1.0,
 )
 
 /** Estimations énergétiques pures (sans dépendance Android). */

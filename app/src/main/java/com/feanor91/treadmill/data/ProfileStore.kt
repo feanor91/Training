@@ -19,6 +19,7 @@ class ProfileStore(context: Context) {
             age = prefs.getInt("age", defaults.age),
             sex = runCatching { Sex.valueOf(prefs.getString("sex", null) ?: "") }.getOrDefault(defaults.sex),
             maxHrOverride = prefs.getInt("maxHr", 0).takeIf { it > 0 },
+            calorieFactor = prefs.getFloat("kcalFactor", 1f).toDouble(),
         ),
     )
     val profile: StateFlow<UserProfile> = _profile.asStateFlow()
@@ -34,11 +35,12 @@ class ProfileStore(context: Context) {
 
     fun update(transform: (UserProfile) -> UserProfile) {
         val p = transform(_profile.value).let {
-            it.copy(weightKg = it.weightKg.coerceIn(30.0, 300.0), heightCm = it.heightCm.coerceIn(120.0, 230.0), age = it.age.coerceIn(10, 110), maxHrOverride = it.maxHrOverride?.coerceIn(100, 230))
+            it.copy(weightKg = it.weightKg.coerceIn(30.0, 300.0), heightCm = it.heightCm.coerceIn(120.0, 230.0), age = it.age.coerceIn(10, 110), maxHrOverride = it.maxHrOverride?.coerceIn(100, 230),
+                calorieFactor = (Math.round(it.calorieFactor * 100) / 100.0).coerceIn(0.5, 2.0))
         }
         _profile.value = p
         prefs.edit()
             .putFloat("weightKg", p.weightKg.toFloat()).putFloat("heightCm", p.heightCm.toFloat())
-            .putInt("age", p.age).putString("sex", p.sex.name).putInt("maxHr", p.maxHrOverride ?: 0).apply()
+            .putInt("age", p.age).putString("sex", p.sex.name).putInt("maxHr", p.maxHrOverride ?: 0).putFloat("kcalFactor", p.calorieFactor.toFloat()).apply()
     }
 }

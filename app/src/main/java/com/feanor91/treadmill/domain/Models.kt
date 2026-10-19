@@ -69,6 +69,8 @@ data class SessionSummary(
     val samples: List<Sample> = emptyList(),
     /** Secondes passées dans chaque zone cardio : index 0 = sous la zone 1, 1..5 = zones 1 à 5. */
     val zoneSeconds: List<Int> = List(6) { 0 },
+    /** Calories affichées par le tapis (FTMS) pendant la séance, si elles sont fournies. */
+    val deviceKcal: Int? = null,
 )
 
 data class Sample(val timeMs: Long, val heartRate: Int?, val speedKmh: Double)
