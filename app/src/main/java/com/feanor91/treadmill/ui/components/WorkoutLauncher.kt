@@ -14,7 +14,8 @@ fun rememberWorkoutLauncher(): (name: String, steps: List<WorkoutStep>, schedule
     return remember(engine, context) {
         { name, steps, scheduleId ->
             engine.start(name, steps, scheduleId)
-            WorkoutService.start(context)
+            // Le service n'est qu'un confort (écran éteint) : s'il est refusé, la séance continue quand même.
+            runCatching { WorkoutService.start(context) }
         }
     }
 }
