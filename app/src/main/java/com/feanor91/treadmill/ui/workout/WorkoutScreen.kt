@@ -113,7 +113,8 @@ fun WorkoutScreen() {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             BigMetric(
                 label = "VITESSE km/h", value = formatSpeed(if (ui.speedKmh > 0 || ui.state == WorkoutState.Paused) ui.speedKmh else ui.targetSpeed),
-                sub = "Allure ${formatPace(ui.speedKmh)} /km · cible ${formatSpeed(ui.targetSpeed)}",
+                sub = ui.currentStep?.targetZone?.let { z -> "Auto · zone $z · cible ${formatSpeed(ui.targetSpeed)}" }
+                    ?: "Allure ${formatPace(ui.speedKmh)} /km · cible ${formatSpeed(ui.targetSpeed)}",
                 color = WorkoutColors.Speed,
                 onMinus = { engine.adjustSpeed(-0.5) }, onPlus = { engine.adjustSpeed(0.5) },
             )
@@ -124,8 +125,10 @@ fun WorkoutScreen() {
                     onMinus = { engine.adjustIncline(-0.5) }, onPlus = { engine.adjustIncline(0.5) },
                 )
                 BigMetric(
-                    label = "♥ BPM", value = ui.heartRate?.toString() ?: "--", sub = "",
-                    color = WorkoutColors.Heart, valueSize = 56, modifier = Modifier.weight(1f),
+                    label = "♥ BPM", value = ui.heartRate?.toString() ?: "--",
+                    sub = if (ui.heartRate != null && ui.hrZone in 1..5) "Zone ${ui.hrZone}" + (ui.currentStep?.targetZone?.let { " · cible $it" } ?: "") else "",
+                    color = if (ui.heartRate != null) zoneColor(ui.hrZone) else WorkoutColors.Heart,
+                    valueSize = 56, modifier = Modifier.weight(1f),
                 )
             }
         }
@@ -187,6 +190,7 @@ fun WorkoutScreen() {
                 Text(
                     "Durée ${formatClock(s.durationSec)}\nDistance ${formatKm(s.distanceM)} km\n" +
                         "Vitesse moyenne ${formatSpeed(s.avgSpeedKmh)} km/h\nDépense active ≈ ${s.activeKcal} kcal\nPas estimés ≈ ${s.steps}" +
+                        (if (s.zoneSeconds.drop(1).sum() > 0) "\nTemps par zone : " + (1..5).joinToString(" · ") { z -> "Z$z ${formatClock(s.zoneSeconds[z])}" } else "") +
                         if (s.avgHr > 0) "\nCardio moyen ${s.avgHr} · max ${s.maxHr} bpm" else "",
                     textAlign = TextAlign.Start,
                 )
@@ -196,6 +200,15 @@ fun WorkoutScreen() {
             confirmButton = { TextButton(engine::dismiss) { Text("OK") } },
         )
     }
+}
+
+private fun zoneColor(zone: Int): Color = when (zone) {
+    1 -> Color(0xFF6EA8FE)
+    2 -> Color(0xFF5FD3B5)
+    3 -> Color(0xFFFFD43B)
+    4 -> Color(0xFFFFA94D)
+    5 -> Color(0xFFFF6B6B)
+    else -> Color(0xFF9AA0A6)
 }
 
 @Composable

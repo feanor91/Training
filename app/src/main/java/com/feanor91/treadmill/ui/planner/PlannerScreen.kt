@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.feanor91.treadmill.data.PlanWithSteps
+import com.feanor91.treadmill.data.ProgramSummary
 import com.feanor91.treadmill.data.toWorkoutSteps
 import com.feanor91.treadmill.ui.components.ProfileChart
 import com.feanor91.treadmill.ui.components.containerViewModel
@@ -55,10 +56,12 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 
 @Composable
-fun PlannerScreen(onEditPlan: (Long) -> Unit) {
+fun PlannerScreen(onEditPlan: (Long) -> Unit, onNewProgram: () -> Unit) {
     val vm = containerViewModel { PlannerViewModel(it) }
     val plans by vm.plans.collectAsState()
     val upcoming by vm.upcoming.collectAsState()
+    val programs by vm.programs.collectAsState()
+    var deleting by remember { mutableStateOf<ProgramSummary?>(null) }
     val launch = rememberWorkoutLauncher()
     var tab by remember { mutableIntStateOf(0) }
     var scheduling by remember { mutableStateOf<PlanWithSteps?>(null) }
@@ -67,12 +70,14 @@ fun PlannerScreen(onEditPlan: (Long) -> Unit) {
         topBar = { TopAppBar(title = { Text("Entraînements") }) },
         floatingActionButton = {
             if (tab == 0) FloatingActionButton({ onEditPlan(0) }) { Icon(Icons.Default.Add, "Nouveau plan") }
+            if (tab == 2) FloatingActionButton(onNewProgram) { Icon(Icons.Default.Add, "Nouveau programme") }
         },
     ) { padding ->
         Column(Modifier.padding(padding)) {
             TabRow(selectedTabIndex = tab) {
                 Tab(tab == 0, { tab = 0 }, text = { Text("Plans") })
                 Tab(tab == 1, { tab = 1 }, text = { Text("Calendrier") })
+                Tab(tab == 2, { tab = 2 }, text = { Text("Programmes") })
             }
             LazyColumn(
                 contentPadding = PaddingValues(16.dp),
@@ -82,6 +87,16 @@ fun PlannerScreen(onEditPlan: (Long) -> Unit) {
                     items(plans, key = { it.plan.id }) { p ->
                         PlanCard(p, onStart = { launch(p.plan.name, p.toWorkoutSteps(), null) }, onEdit = { onEditPlan(p.plan.id) }, onSchedule = { scheduling = p }, onDelete = { vm.deletePlan(p.plan.id) })
                     }
+                } else if (tab == 2) {
+                    if (programs.isEmpty()) {
+                        item {
+                            Text(
+                                "Créez un programme d'objectif (par exemple perte de poids sur 28 jours) : l'application " +
+                                    "répartit les séances sur le calendrier et vous rappelle à l'heure choisie.",
+                            )
+                        }
+                    }
+                    items(programs, key = { it.program.id }) { p -> ProgramCard(p, onDelete = { deleting = p }) }
                 } else {
                     if (upcoming.isEmpty()) item { Text("Rien de programmé. Utilisez l'icône calendrier d'un plan. Touchez une séance pour la lancer.") }
                     upcoming.groupBy { it.schedule.epochDay }.forEach { (day, list) ->
@@ -106,10 +121,47 @@ fun PlannerScreen(onEditPlan: (Long) -> Unit) {
         }
     }
 
+    deleting?.let { p ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Supprimer le programme ?") },
+            text = { Text("« ${p.program.name} » et ses ${p.total} séances du calendrier seront supprimés. L'historique est conservé.") },
+            confirmButton = { TextButton({ vm.deleteProgram(p.program.id); deleting = null }) { Text("Supprimer") } },
+            dismissButton = { TextButton({ deleting = null }) { Text("Annuler") } },
+        )
+    }
+
     scheduling?.let { plan ->
         ScheduleDialog(plan.plan.name, onDismiss = { scheduling = null }) { date, weeks ->
             vm.schedule(plan.plan.id, date, weeks)
             scheduling = null
+        }
+    }
+}
+
+@Composable
+private fun ProgramCard(p: ProgramSummary, onDelete: () -> Unit) {
+    val fmt = java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.MEDIUM)
+    val start = LocalDate.ofEpochDay(p.program.startEpochDay)
+    val end = start.plusDays(p.program.totalDays.toLong() - 1)
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(p.program.name, style = MaterialTheme.typography.titleMedium)
+                    Text("Du ${start.format(fmt)} au ${end.format(fmt)}", style = MaterialTheme.typography.bodySmall)
+                }
+                IconButton(onDelete) { Icon(Icons.Default.Delete, "Supprimer") }
+            }
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { if (p.total == 0) 0f else p.done.toFloat() / p.total },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                "${p.done} / ${p.total} séances faites" +
+                    if (p.program.reminderMinutes >= 0) " · rappel à %02d:%02d".format(p.program.reminderMinutes / 60, p.program.reminderMinutes % 60) else "",
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
     }
 }

@@ -33,7 +33,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
+import com.feanor91.treadmill.domain.HeartZones
 import com.feanor91.treadmill.domain.Sex
+import com.feanor91.treadmill.domain.UserProfile
 import com.feanor91.treadmill.health.BodyComposition
 import com.feanor91.treadmill.health.DayBalance
 import com.feanor91.treadmill.health.HcAvailability
@@ -127,6 +129,11 @@ fun HealthScreen() {
                             FilterChip(profile.sex == Sex.Male, { vm.updateProfile { it.copy(sex = Sex.Male) } }, { Text("Homme") })
                             FilterChip(profile.sex == Sex.Female, { vm.updateProfile { it.copy(sex = Sex.Female) } }, { Text("Femme") })
                         }
+                        HeartZonesBlock(profile, onMinus = {
+                            vm.updateProfile { p -> p.copy(maxHrOverride = HeartZones.maxHr(p) - 1) }
+                        }, onPlus = {
+                            vm.updateProfile { p -> p.copy(maxHrOverride = HeartZones.maxHr(p) + 1) }
+                        }, onAuto = { vm.updateProfile { p -> p.copy(maxHrOverride = null) } })
                         if (ui.coreGranted) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("Poids et taille depuis Health Connect", Modifier.weight(1f))
@@ -214,6 +221,24 @@ private fun WeightChart(values: List<Double>) {
             if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }
         drawPath(path, line, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 4f))
+    }
+}
+
+@Composable
+private fun HeartZonesBlock(profile: UserProfile, onMinus: () -> Unit, onPlus: () -> Unit, onAuto: () -> Unit) {
+    val max = HeartZones.maxHr(profile)
+    HorizontalDivider(Modifier.padding(vertical = 6.dp))
+    Text("Zones de fréquence cardiaque", style = MaterialTheme.typography.titleSmall)
+    ProfileRow(
+        if (profile.maxHrOverride == null) "FC max (estimée)" else "FC max (saisie)", "$max bpm", onMinus, onPlus,
+    )
+    if (profile.maxHrOverride != null) OutlinedButton(onAuto) { Text("Revenir à l'estimation (208 − 0,7 × âge)") }
+    (1..5).forEach { z ->
+        val r = HeartZones.range(z, max)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Z$z · ${HeartZones.names[z - 1]}", style = MaterialTheme.typography.bodySmall)
+            Text("${r.first}–${r.last} bpm", style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 

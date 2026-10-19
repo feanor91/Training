@@ -15,13 +15,13 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TrainingDao {
     // Plans
-    @Transaction @Query("SELECT * FROM plans ORDER BY name")
+    @Transaction @Query("SELECT * FROM plans WHERE programId IS NULL ORDER BY name")
     fun observePlans(): Flow<List<PlanWithSteps>>
 
     @Transaction @Query("SELECT * FROM plans WHERE id = :id")
     suspend fun getPlan(id: Long): PlanWithSteps?
 
-    @Query("SELECT COUNT(*) FROM plans WHERE name = :name") suspend fun planNameCount(name: String): Int
+    @Query("SELECT COUNT(*) FROM plans WHERE name = :name AND programId IS NULL") suspend fun planNameCount(name: String): Int
     @Insert suspend fun insertPlan(plan: PlanEntity): Long
     @Update suspend fun updatePlan(plan: PlanEntity)
     @Query("DELETE FROM plans WHERE id = :id") suspend fun deletePlan(id: Long)
@@ -39,6 +39,29 @@ interface TrainingDao {
     @Delete suspend fun deleteSchedule(item: ScheduleEntity)
     @Query("UPDATE schedule SET completed = 1 WHERE id = :id") suspend fun markDone(id: Long)
 
+    // Programmes d'objectif
+    @Insert suspend fun insertProgram(p: ProgramEntity): Long
+
+    @Query(
+        "SELECT g.*, " +
+            "(SELECT COUNT(*) FROM schedule s JOIN plans p ON s.planId = p.id WHERE p.programId = g.id) AS total, " +
+            "(SELECT COUNT(*) FROM schedule s JOIN plans p ON s.planId = p.id WHERE p.programId = g.id AND s.completed = 1) AS done " +
+            "FROM programs g ORDER BY g.startEpochDay DESC",
+    )
+    fun observePrograms(): Flow<List<ProgramSummary>>
+
+    @Query("DELETE FROM plans WHERE programId = :programId") suspend fun deletePlansOfProgram(programId: Long)
+    @Query("DELETE FROM programs WHERE id = :id") suspend fun deleteProgram(id: Long)
+
+    @Query(
+        "SELECT s.id AS scheduleId, s.epochDay AS epochDay, p.name AS planName, g.reminderMinutes AS reminderMinutes " +
+            "FROM schedule s JOIN plans p ON s.planId = p.id JOIN programs g ON p.programId = g.id " +
+            "WHERE g.reminderMinutes >= 0 AND s.completed = 0 AND s.epochDay >= :fromDay ORDER BY s.epochDay LIMIT 30",
+    )
+    suspend fun reminderRows(fromDay: Long): List<ReminderRow>
+
+    @Query("SELECT s.completed FROM schedule s WHERE s.id = :id") suspend fun isCompleted(id: Long): Boolean?
+
     // Historique
     @Query("SELECT * FROM sessions ORDER BY startedAt DESC")
     fun observeSessions(): Flow<List<SessionEntity>>
@@ -49,14 +72,28 @@ interface TrainingDao {
 }
 
 @Database(
-    entities = [PlanEntity::class, StepEntity::class, ScheduleEntity::class, SessionEntity::class],
-    version = 3,
+    entities = [PlanEntity::class, StepEntity::class, ScheduleEntity::class, SessionEntity::class, ProgramEntity::class],
+    version = 4,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): TrainingDao
 
     companion object {
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE plans ADD COLUMN programId INTEGER")
+                db.execSQL("ALTER TABLE steps ADD COLUMN targetZone INTEGER")
+                db.execSQL("ALTER TABLE steps ADD COLUMN minSpeedKmh REAL")
+                db.execSQL("ALTER TABLE steps ADD COLUMN maxSpeedKmh REAL")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS programs (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "name TEXT NOT NULL, goal TEXT NOT NULL, startEpochDay INTEGER NOT NULL, totalDays INTEGER NOT NULL, " +
+                        "weekdaysMask INTEGER NOT NULL, reminderMinutes INTEGER NOT NULL, maxSpeedKmh REAL NOT NULL)",
+                )
+            }
+        }
+
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE sessions ADD COLUMN steps INTEGER NOT NULL DEFAULT 0")

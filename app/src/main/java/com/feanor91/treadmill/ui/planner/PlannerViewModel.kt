@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.feanor91.treadmill.AppContainer
 import com.feanor91.treadmill.data.PlanEntity
+import com.feanor91.treadmill.data.ProgramSummary
 import com.feanor91.treadmill.data.PlanWithSteps
 import com.feanor91.treadmill.data.ScheduleEntity
 import com.feanor91.treadmill.data.ScheduledItem
@@ -24,6 +25,14 @@ class PlannerViewModel(private val c: AppContainer) : ViewModel() {
     val upcoming: StateFlow<List<ScheduledItem>> =
         c.repository.upcoming().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val programs: StateFlow<List<ProgramSummary>> =
+        c.repository.programs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun deleteProgram(id: Long) = viewModelScope.launch {
+        c.repository.deleteProgram(id)
+        runCatching { c.reminders.reschedule() }
+    }
+
     fun schedule(planId: Long, date: LocalDate, weeks: Int) = viewModelScope.launch {
         c.repository.schedule(planId, date, weeks)
     }
@@ -38,6 +47,10 @@ data class DraftStep(
     val speedKmh: Double = 6.0,
     val inclinePct: Double = 0.0,
     val label: String = "",
+    /** Zone cardio visée (1-5) ; null = vitesse fixe. */
+    val targetZone: Int? = null,
+    val minSpeedKmh: Double = 3.0,
+    val maxSpeedKmh: Double = 5.0,
 )
 
 data class PlanDraft(
@@ -50,6 +63,7 @@ data class PlanDraft(
 class PlanEditorViewModel(private val c: AppContainer, private val planId: Long) : ViewModel() {
     val draft = MutableStateFlow(PlanDraft())
     val limits: StateFlow<MachineLimits> = c.ftms.limits
+    val profile = c.profileStore.profile
     val saved = MutableStateFlow(false)
 
     init {
@@ -57,7 +71,12 @@ class PlanEditorViewModel(private val c: AppContainer, private val planId: Long)
             c.repository.plan(planId)?.let { p ->
                 draft.value = PlanDraft(
                     p.plan.id, p.plan.name, p.plan.description,
-                    p.orderedSteps.map { DraftStep(it.durationSec, it.speedKmh, it.inclinePct, it.label) },
+                    p.orderedSteps.map {
+                        DraftStep(
+                            it.durationSec, it.speedKmh, it.inclinePct, it.label, it.targetZone,
+                            it.minSpeedKmh ?: (it.speedKmh - 1.0), it.maxSpeedKmh ?: (it.speedKmh + 1.0),
+                        )
+                    },
                 )
             }
         }
@@ -92,7 +111,11 @@ class PlanEditorViewModel(private val c: AppContainer, private val planId: Long)
             c.repository.savePlan(
                 PlanEntity(d.id, d.name.trim(), d.description.trim()),
                 d.steps.mapIndexed { i, s ->
-                    StepEntity(planId = d.id, position = i, durationSec = s.durationSec, speedKmh = s.speedKmh, inclinePct = s.inclinePct, label = s.label)
+                    StepEntity(
+                        planId = d.id, position = i, durationSec = s.durationSec, speedKmh = s.speedKmh, inclinePct = s.inclinePct,
+                        label = s.label, targetZone = s.targetZone,
+                        minSpeedKmh = s.minSpeedKmh.takeIf { s.targetZone != null }, maxSpeedKmh = s.maxSpeedKmh.takeIf { s.targetZone != null },
+                    )
                 },
             )
             saved.value = true

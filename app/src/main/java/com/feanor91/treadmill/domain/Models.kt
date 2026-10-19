@@ -39,9 +39,14 @@ data class BleDevice(val address: String, val name: String, val rssi: Int)
 
 data class WorkoutStep(
     val durationSec: Int,      // 0 = illimité (course libre)
-    val speedKmh: Double,
+    val speedKmh: Double,      // vitesse fixe, ou vitesse de départ si le palier est piloté par le cardio
     val inclinePct: Double,
     val label: String = "",
+    /** Zone cardio visée (1-5) : si renseignée, la vitesse est ajustée automatiquement. null = vitesse fixe. */
+    val targetZone: Int? = null,
+    /** Bornes de vitesse du pilotage automatique ; par défaut vitesse de départ −1 / +1 km/h. */
+    val minSpeedKmh: Double? = null,
+    val maxSpeedKmh: Double? = null,
 )
 
 enum class WorkoutState { Idle, Running, Paused, Finished }
@@ -62,6 +67,8 @@ data class SessionSummary(
     val steps: Int = 0,
     /** Échantillons (toutes les 5 s) pour l'export Health Connect ; non persistés. */
     val samples: List<Sample> = emptyList(),
+    /** Secondes passées dans chaque zone cardio : index 0 = sous la zone 1, 1..5 = zones 1 à 5. */
+    val zoneSeconds: List<Int> = List(6) { 0 },
 )
 
 data class Sample(val timeMs: Long, val heartRate: Int?, val speedKmh: Double)

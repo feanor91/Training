@@ -34,6 +34,9 @@ data class WorkoutUi(
     val kcal: Int = 0,
     /** Pas estimés depuis le début de la séance. */
     val stepCount: Int = 0,
+    /** Zone cardio actuelle (0 = sous la zone 1 ou pas de mesure) et FC max utilisée. */
+    val hrZone: Int = 0,
+    val maxHr: Int = 0,
 ) {
     val currentStep: WorkoutStep? get() = steps.getOrNull(stepIndex)
     val nextStep: WorkoutStep? get() = steps.getOrNull(stepIndex + 1)
@@ -72,6 +75,9 @@ class WorkoutEngine(
     private var hrMax = 0
     private var kcalAcc = 0.0
     private var stepsAcc = 0.0
+    private val zoneSeconds = IntArray(6)
+    private val hrWindow = ArrayDeque<Int>()
+    private var stepTick = 0
     private val samples = ArrayList<Sample>()
 
     val running get() = _ui.value.state == WorkoutState.Running || _ui.value.state == WorkoutState.Paused
@@ -80,7 +86,7 @@ class WorkoutEngine(
         if (running || steps.isEmpty()) return
         this.scheduleId = scheduleId
         distanceBase = ftms.metrics.value.distanceM
-        integratedM = 0.0; kcalAcc = 0.0; stepsAcc = 0.0; samples.clear(); speedSum = 0.0; speedN = 0; hrSum = 0; hrN = 0; hrMax = 0
+        integratedM = 0.0; kcalAcc = 0.0; stepsAcc = 0.0; zoneSeconds.fill(0); hrWindow.clear(); stepTick = 0; samples.clear(); speedSum = 0.0; speedN = 0; hrSum = 0; hrN = 0; hrMax = 0
         val limits = ftms.limits.value
         val fixed = steps.map { it.copy(speedKmh = limits.clampSpeed(it.speedKmh), inclinePct = limits.clampIncline(it.inclinePct)) }
         _ui.value = WorkoutUi(
@@ -161,6 +167,8 @@ class WorkoutEngine(
 
     private fun enterStep(index: Int) {
         val step = _ui.value.steps[index]
+        stepTick = 0
+        hrWindow.clear()
         _ui.update {
             it.copy(stepIndex = index, stepRemainingSec = step.durationSec, targetSpeed = step.speedKmh, targetIncline = step.inclinePct)
         }
@@ -191,15 +199,50 @@ class WorkoutEngine(
             ?.let { d -> (d - (distanceBase ?: d)).coerceAtLeast(0) } ?: integratedM.toInt()
 
         val step = u.currentStep ?: return
+        val maxHr = HeartZones.maxHr(profile())
+        val zone = if (hr != null) HeartZones.zoneOf(hr, maxHr) else 0
+        if (hr != null) zoneSeconds[zone]++
+        stepTick++
+        if (step.targetZone != null && hr != null) controlSpeed(step, u, hr, maxHr)
         val remaining = if (step.durationSec == 0) 0 else u.stepRemainingSec - 1
         _ui.update {
             it.copy(
                 elapsedSec = it.elapsedSec + 1, kcal = kcalAcc.toInt(), stepCount = stepsAcc.toInt(), stepRemainingSec = remaining.coerceAtLeast(0),
-                speedKmh = speed, inclinePct = incline, heartRate = hr, distanceM = dist,
+                speedKmh = speed, inclinePct = incline, heartRate = hr, distanceM = dist, hrZone = zone, maxHr = maxHr,
             )
         }
         if ((u.elapsedSec + 1) % SAMPLE_EVERY_SEC == 0) samples += Sample(System.currentTimeMillis(), hr, speed)
         if (step.durationSec > 0 && remaining <= 0) skipStep()
+    }
+
+    /**
+     * Pilotage optionnel de la vitesse selon la zone cardio visée : toutes les 20 s (après 40 s de palier,
+     * le cardio réagit avec retard) on compare la FC moyenne des 10 dernières secondes à la zone.
+     * Trop haute : −0,2 km/h (−0,4 si très au-dessus) ; trop basse : +0,1 km/h. Toujours dans les bornes du palier.
+     */
+    private fun controlSpeed(step: WorkoutStep, u: WorkoutUi, hr: Int, maxHr: Int) {
+        hrWindow.addLast(hr)
+        while (hrWindow.size > 10) hrWindow.removeFirst()
+        if (stepTick < 40 || stepTick % 20 != 0 || hrWindow.size < 5) return
+        val avg = hrWindow.average()
+        val range = HeartZones.range(step.targetZone ?: return, maxHr)
+        // Garde-fou : au-delà de 92 % de la FC max on ralentit quelle que soit la zone demandée.
+        val ceiling = minOf(range.last, (maxHr * 0.92).toInt())
+        val limits = ftms.limits.value
+        val lo = limits.clampSpeed(step.minSpeedKmh ?: (step.speedKmh - 1.0))
+        val hi = limits.clampSpeed(step.maxSpeedKmh ?: (step.speedKmh + 1.0))
+        val delta = when {
+            avg > ceiling + 10 -> -0.4
+            avg > ceiling + 2 -> -0.2
+            avg < range.first - 2 -> +0.1
+            else -> 0.0
+        }
+        if (delta == 0.0) return
+        val v = limits.clampSpeed((u.targetSpeed + delta).coerceIn(minOf(lo, hi), maxOf(lo, hi)))
+        if (v != u.targetSpeed) {
+            _ui.update { it.copy(targetSpeed = v) }
+            scope.launch { ftms.setSpeed(v) }
+        }
     }
 
     private fun finish(completed: Boolean) {
@@ -211,6 +254,7 @@ class WorkoutEngine(
             avgSpeedKmh = if (speedN > 0) speedSum / speedN else 0.0,
             scheduleId = scheduleId, completed = completed,
             activeKcal = kcalAcc.toInt(), steps = stepsAcc.toInt(), samples = samples.toList(),
+            zoneSeconds = zoneSeconds.toList(),
         )
         _ui.update { it.copy(state = WorkoutState.Finished, summary = summary, speedKmh = 0.0) }
         scope.launch {

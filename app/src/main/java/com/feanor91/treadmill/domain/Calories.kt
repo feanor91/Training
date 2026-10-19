@@ -8,6 +8,8 @@ data class UserProfile(
     val heightCm: Double = 172.0,
     val age: Int = 62,
     val sex: Sex = Sex.Male,
+    /** Fréquence cardiaque maximale saisie ; null = estimée à partir de l'âge. */
+    val maxHrOverride: Int? = null,
 )
 
 /** Estimations énergétiques pures (sans dépendance Android). */

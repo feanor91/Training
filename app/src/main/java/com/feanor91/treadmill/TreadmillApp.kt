@@ -9,6 +9,7 @@ import com.feanor91.treadmill.data.AppDatabase
 import com.feanor91.treadmill.data.ProfileStore
 import com.feanor91.treadmill.health.ExportableSession
 import com.feanor91.treadmill.health.HealthConnectGateway
+import com.feanor91.treadmill.reminders.ReminderScheduler
 import com.feanor91.treadmill.wear.WearBridge
 import com.feanor91.treadmill.data.TrainingRepository
 import com.feanor91.treadmill.domain.WorkoutEngine
@@ -22,9 +23,11 @@ class AppContainer(app: Application) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private val db = Room.databaseBuilder(app, AppDatabase::class.java, "training.db")
-        .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
+        .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
         .build()
     val repository = TrainingRepository(db)
+
+    val reminders = ReminderScheduler(app, repository)
 
     val ftms = FtmsClient(app, scope)
     val heartRate = HeartRateClient(app)
@@ -63,6 +66,7 @@ class AppContainer(app: Application) {
 
     init {
         wear.attach(engine)
+        scope.launch { runCatching { reminders.reschedule() } }
         val prefs = app.getSharedPreferences("app", Context.MODE_PRIVATE)
         if (prefs.getInt("seedVersion", 0) < SEED_VERSION) {
             scope.launch {
@@ -74,7 +78,7 @@ class AppContainer(app: Application) {
 
     private companion object {
         /** À incrémenter quand de nouveaux plans par défaut sont ajoutés. */
-        const val SEED_VERSION = 2
+        const val SEED_VERSION = 3
     }
 }
 

@@ -12,6 +12,37 @@ data class PlanEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val description: String = "",
+    /** Non nul pour les séances générées par un programme (masquées de la liste des plans). */
+    val programId: Long? = null,
+)
+
+/** Programme d'objectif : un ensemble de séances réparties sur un calendrier, avec rappel. */
+@Entity(tableName = "programs")
+data class ProgramEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    /** Nom de [com.feanor91.treadmill.domain.ProgramGoal]. */
+    val goal: String,
+    val startEpochDay: Long,
+    val totalDays: Int,
+    /** Bit n = jour n de la semaine (lundi = 0). */
+    val weekdaysMask: Int,
+    /** Heure du rappel en minutes depuis minuit ; -1 = pas de rappel. */
+    val reminderMinutes: Int,
+    val maxSpeedKmh: Double,
+)
+
+data class ProgramSummary(
+    @Embedded val program: ProgramEntity,
+    val total: Int,
+    val done: Int,
+)
+
+data class ReminderRow(
+    val scheduleId: Long,
+    val epochDay: Long,
+    val planName: String,
+    val reminderMinutes: Int,
 )
 
 @Entity(
@@ -27,6 +58,9 @@ data class StepEntity(
     val speedKmh: Double,
     val inclinePct: Double,
     val label: String = "",
+    val targetZone: Int? = null,
+    val minSpeedKmh: Double? = null,
+    val maxSpeedKmh: Double? = null,
 )
 
 /** Une séance programmée un jour donné (epochDay = LocalDate.toEpochDay()). */

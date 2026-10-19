@@ -37,6 +37,7 @@ import com.feanor91.treadmill.ui.history.HistoryScreen
 import com.feanor91.treadmill.ui.home.HomeScreen
 import com.feanor91.treadmill.ui.planner.PlanEditorScreen
 import com.feanor91.treadmill.ui.planner.PlannerScreen
+import com.feanor91.treadmill.ui.planner.ProgramEditorScreen
 import com.feanor91.treadmill.ui.theme.TreadmillTheme
 import com.feanor91.treadmill.ui.workout.WorkoutScreen
 
@@ -98,7 +99,10 @@ private fun AppNav() {
     ) { padding ->
         NavHost(nav, startDestination = Tab.Home.route, modifier = Modifier.padding(bottom = if (showBar) padding.calculateBottomPadding() else 0.dp)) {
             composable(Tab.Home.route) { HomeScreen() }
-            composable(Tab.Planner.route) { PlannerScreen(onEditPlan = { nav.navigate("editor/$it") }) }
+            composable(Tab.Planner.route) {
+                PlannerScreen(onEditPlan = { nav.navigate("editor/$it") }, onNewProgram = { nav.navigate("program") })
+            }
+            composable("program") { ProgramEditorScreen(onClose = { nav.popBackStack() }) }
             composable(Tab.Health.route) { HealthScreen() }
             composable(Tab.History.route) { HistoryScreen() }
             composable(EDITOR, listOf(navArgument("planId") { type = NavType.LongType })) {

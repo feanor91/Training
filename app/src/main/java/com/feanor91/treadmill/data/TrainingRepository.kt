@@ -1,5 +1,6 @@
 package com.feanor91.treadmill.data
 
+import com.feanor91.treadmill.domain.GeneratedSession
 import com.feanor91.treadmill.domain.SessionSummary
 import com.feanor91.treadmill.domain.WorkoutStep
 import androidx.room.withTransaction
@@ -11,6 +12,7 @@ class TrainingRepository(private val db: AppDatabase) {
 
     val plans: Flow<List<PlanWithSteps>> = dao.observePlans()
     val sessions: Flow<List<SessionEntity>> = dao.observeSessions()
+    val programs: Flow<List<ProgramSummary>> = dao.observePrograms()
 
     fun today(): Flow<List<ScheduledItem>> = dao.observeDay(LocalDate.now().toEpochDay())
     fun upcoming(limit: Int = 30): Flow<List<ScheduledItem>> =
@@ -23,6 +25,26 @@ class TrainingRepository(private val db: AppDatabase) {
         id
     }
     suspend fun deletePlan(id: Long) = dao.deletePlan(id)
+
+    /** Crée le programme, une séance (plan masqué) par date générée, et les inscrit au calendrier. */
+    suspend fun createProgram(program: ProgramEntity, sessions: List<GeneratedSession>): Long = db.withTransaction {
+        val programId = dao.insertProgram(program)
+        for (s in sessions) {
+            val planId = dao.insertPlan(PlanEntity(name = s.title, description = s.description, programId = programId))
+            dao.insertSteps(s.steps.mapIndexed { i, st -> st.toEntity(planId, i) })
+            dao.insertSchedule(listOf(ScheduleEntity(planId = planId, epochDay = s.date.toEpochDay())))
+        }
+        programId
+    }
+
+    /** Supprime le programme avec ses séances et leurs entrées de calendrier (suppression en cascade). */
+    suspend fun deleteProgram(id: Long) = db.withTransaction {
+        dao.deletePlansOfProgram(id)
+        dao.deleteProgram(id)
+    }
+
+    suspend fun reminderRows(fromDay: Long) = dao.reminderRows(fromDay)
+    suspend fun isScheduleCompleted(id: Long) = dao.isCompleted(id) ?: true
 
     /** Programme [planId] à [start], puis chaque semaine pendant [weeks] semaines (1 = une seule fois). */
     suspend fun schedule(planId: Long, start: LocalDate, weeks: Int) {
@@ -53,6 +75,10 @@ class TrainingRepository(private val db: AppDatabase) {
     suspend fun seedDefaults() {
         fun step(min: Double, speed: Double, incl: Double, label: String) =
             StepEntity(planId = 0, position = 0, durationSec = (min * 60).toInt(), speedKmh = speed, inclinePct = incl, label = label)
+
+        /** Palier piloté par le cardio : la vitesse évolue entre [lo] et [hi] pour rester dans la zone [zone]. */
+        fun zoned(min: Double, start: Double, lo: Double, hi: Double, zone: Int, incl: Double, label: String) =
+            step(min, start, incl, label).copy(targetZone = zone, minSpeedKmh = lo, maxSpeedKmh = hi)
 
         val defaults = listOf(
             Triple("Marche active 30 min", "Échauffement, rythme soutenu, retour au calme",
@@ -85,11 +111,31 @@ class TrainingRepository(private val db: AppDatabase) {
                     listOf(1.0, 2.0, 3.0, 2.0, 1.0).map { step(4.0, 4.0, it, "Pente ${it.toInt()} %") } +
                     step(5.0, 2.0, 0.0, "Retour au calme")),
         )
-        for ((name, desc, steps) in defaults) {
+        val zoneDefaults = listOf(
+            Triple("Zone 2 · endurance douce 30 min", "Vitesse ajustée automatiquement pour rester en zone 2 (cardio requis)",
+                listOf(step(5.0, 2.5, 0.0, "Échauffement"), zoned(20.0, 3.5, 3.0, 4.5, 2, 0.0, "Zone 2"), step(5.0, 2.0, 0.0, "Retour au calme"))),
+            Triple("Brûle-graisse zone 2 · 40 min", "30 min en zone 2 avec une pente légère (cardio requis)",
+                listOf(step(5.0, 2.5, 0.0, "Échauffement"), zoned(30.0, 3.5, 3.0, 4.5, 2, 1.0, "Zone 2 · pente 1 %"), step(5.0, 2.0, 0.0, "Retour au calme"))),
+            Triple("Cardio progressif zone 2 → 3 · 30 min", "Du facile au soutenu, vitesse pilotée par le cardio",
+                listOf(step(5.0, 2.5, 0.0, "Échauffement"), zoned(8.0, 3.2, 2.8, 4.2, 2, 0.0, "Zone 2"), zoned(8.0, 3.8, 3.2, 4.8, 3, 0.0, "Zone 3"),
+                    zoned(4.0, 3.2, 2.8, 4.0, 2, 0.0, "Zone 2"), step(5.0, 2.0, 0.0, "Retour au calme"))),
+            Triple("Fractionné cardio zone 3/1 · 30 min", "4 x (3 min zone 3 / 2 min zone 1), vitesse max 5 km/h",
+                listOf(step(5.0, 2.5, 0.0, "Échauffement")) +
+                    (1..4).flatMap { listOf(zoned(3.0, 4.2, 3.5, 5.0, 3, 0.0, "Effort $it"), zoned(2.0, 2.8, 2.0, 3.0, 1, 0.0, "Récup $it")) } +
+                    step(5.0, 2.0, 0.0, "Retour au calme")),
+        )
+        for ((name, desc, steps) in defaults + zoneDefaults) {
             if (dao.planNameCount(name) == 0) savePlan(PlanEntity(name = name, description = desc), steps)
         }
     }
 }
 
 fun PlanWithSteps.toWorkoutSteps(): List<WorkoutStep> =
-    orderedSteps.map { WorkoutStep(it.durationSec, it.speedKmh, it.inclinePct, it.label) }
+    orderedSteps.map {
+        WorkoutStep(it.durationSec, it.speedKmh, it.inclinePct, it.label, it.targetZone, it.minSpeedKmh, it.maxSpeedKmh)
+    }
+
+fun WorkoutStep.toEntity(planId: Long, position: Int) = StepEntity(
+    planId = planId, position = position, durationSec = durationSec, speedKmh = speedKmh, inclinePct = inclinePct,
+    label = label, targetZone = targetZone, minSpeedKmh = minSpeedKmh, maxSpeedKmh = maxSpeedKmh,
+)

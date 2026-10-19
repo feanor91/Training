@@ -35,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.feanor91.treadmill.domain.HeartZones
 import com.feanor91.treadmill.domain.WorkoutStep
 import com.feanor91.treadmill.ui.components.ProfileChart
 import com.feanor91.treadmill.ui.components.containerViewModel
@@ -48,8 +49,10 @@ fun PlanEditorScreen(planId: Long, onClose: () -> Unit) {
     val draft by vm.draft.collectAsState()
     val limits by vm.limits.collectAsState()
     val saved by vm.saved.collectAsState()
+    val profile by vm.profile.collectAsState()
     LaunchedEffect(saved) { if (saved) onClose() }
 
+    val maxHr = HeartZones.maxHr(profile)
     val speedStep = if (limits.fromDevice) limits.speedStepKmh.coerceAtLeast(0.1) else 0.1
     val inclineStep = if (limits.fromDevice) limits.inclineStepPct.coerceAtLeast(0.1) else 0.5
 
@@ -105,6 +108,44 @@ fun PlanEditorScreen(planId: Long, onClose: () -> Unit) {
                         Stepper("Pente", "${formatIncline(s.inclinePct)} %",
                             onMinus = { vm.updateStep(i) { it.copy(inclinePct = limits.clampIncline(it.inclinePct - inclineStep)) } },
                             onPlus = { vm.updateStep(i) { it.copy(inclinePct = limits.clampIncline(it.inclinePct + inclineStep)) } })
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Vitesse pilotée par le cardio (optionnel)", Modifier.weight(1f))
+                            androidx.compose.material3.Switch(
+                                checked = s.targetZone != null,
+                                onCheckedChange = { on ->
+                                    vm.updateStep(i) {
+                                        if (on) it.copy(
+                                            targetZone = 2,
+                                            minSpeedKmh = limits.clampSpeed(it.speedKmh - 1.0),
+                                            maxSpeedKmh = limits.clampSpeed(it.speedKmh + 1.0),
+                                        ) else it.copy(targetZone = null)
+                                    }
+                                },
+                            )
+                        }
+                        if (s.targetZone != null) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                (1..5).forEach { z ->
+                                    androidx.compose.material3.FilterChip(
+                                        selected = s.targetZone == z,
+                                        onClick = { vm.updateStep(i) { it.copy(targetZone = z) } },
+                                        label = { Text("Z$z") },
+                                    )
+                                }
+                            }
+                            Text(
+                                "Zone ${s.targetZone} : ${HeartZones.name(s.targetZone)} · " +
+                                    "${HeartZones.range(s.targetZone, maxHr).first}–${HeartZones.range(s.targetZone, maxHr).last} bpm. " +
+                                    "La vitesse de départ ci-dessus évolue entre les bornes ; sans capteur cardio, elle reste fixe.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Stepper("Vitesse mini", "${formatSpeed(s.minSpeedKmh)} km/h",
+                                onMinus = { vm.updateStep(i) { it.copy(minSpeedKmh = limits.clampSpeed(it.minSpeedKmh - speedStep)) } },
+                                onPlus = { vm.updateStep(i) { it.copy(minSpeedKmh = limits.clampSpeed(minOf(it.minSpeedKmh + speedStep, it.maxSpeedKmh))) } })
+                            Stepper("Vitesse maxi", "${formatSpeed(s.maxSpeedKmh)} km/h",
+                                onMinus = { vm.updateStep(i) { it.copy(maxSpeedKmh = limits.clampSpeed(maxOf(it.maxSpeedKmh - speedStep, it.minSpeedKmh))) } },
+                                onPlus = { vm.updateStep(i) { it.copy(maxSpeedKmh = limits.clampSpeed(it.maxSpeedKmh + speedStep)) } })
+                        }
                         Row {
                             IconButton({ vm.duplicateStep(i) }) { Icon(Icons.Default.ContentCopy, "Dupliquer") }
                             IconButton({ vm.removeStep(i) }, enabled = draft.steps.size > 1) { Icon(Icons.Default.Delete, "Supprimer") }
