@@ -47,6 +47,7 @@ import com.feanor91.treadmill.data.PlanWithSteps
 import com.feanor91.treadmill.data.toWorkoutSteps
 import com.feanor91.treadmill.ui.components.ProfileChart
 import com.feanor91.treadmill.ui.components.containerViewModel
+import com.feanor91.treadmill.ui.components.rememberWorkoutLauncher
 import com.feanor91.treadmill.ui.formatClock
 import com.feanor91.treadmill.ui.formatDay
 import java.time.Instant
@@ -58,6 +59,7 @@ fun PlannerScreen(onEditPlan: (Long) -> Unit) {
     val vm = containerViewModel { PlannerViewModel(it) }
     val plans by vm.plans.collectAsState()
     val upcoming by vm.upcoming.collectAsState()
+    val launch = rememberWorkoutLauncher()
     var tab by remember { mutableIntStateOf(0) }
     var scheduling by remember { mutableStateOf<PlanWithSteps?>(null) }
 
@@ -78,14 +80,17 @@ fun PlannerScreen(onEditPlan: (Long) -> Unit) {
             ) {
                 if (tab == 0) {
                     items(plans, key = { it.plan.id }) { p ->
-                        PlanCard(p, onEdit = { onEditPlan(p.plan.id) }, onSchedule = { scheduling = p }, onDelete = { vm.deletePlan(p.plan.id) })
+                        PlanCard(p, onStart = { launch(p.plan.name, p.toWorkoutSteps(), null) }, onEdit = { onEditPlan(p.plan.id) }, onSchedule = { scheduling = p }, onDelete = { vm.deletePlan(p.plan.id) })
                     }
                 } else {
-                    if (upcoming.isEmpty()) item { Text("Rien de programmé. Utilisez l'icône calendrier d'un plan.") }
+                    if (upcoming.isEmpty()) item { Text("Rien de programmé. Utilisez l'icône calendrier d'un plan. Touchez une séance pour la lancer.") }
                     upcoming.groupBy { it.schedule.epochDay }.forEach { (day, list) ->
                         item(key = "d$day") { Text(formatDay(day), style = MaterialTheme.typography.titleSmall) }
                         items(list, key = { it.schedule.id }) { s ->
-                            Card(Modifier.fillMaxWidth()) {
+                            Card(
+                                onClick = { launch(s.plan.plan.name, s.plan.toWorkoutSteps(), s.schedule.id) },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
                                 Row(Modifier.padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
                                         Text(s.plan.plan.name, style = MaterialTheme.typography.titleMedium)
@@ -110,8 +115,8 @@ fun PlannerScreen(onEditPlan: (Long) -> Unit) {
 }
 
 @Composable
-private fun PlanCard(p: PlanWithSteps, onEdit: () -> Unit, onSchedule: () -> Unit, onDelete: () -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
+private fun PlanCard(p: PlanWithSteps, onStart: () -> Unit, onEdit: () -> Unit, onSchedule: () -> Unit, onDelete: () -> Unit) {
+    Card(onClick = onStart, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(p.plan.name, style = MaterialTheme.typography.titleMedium)
             if (p.plan.description.isNotBlank()) Text(p.plan.description, style = MaterialTheme.typography.bodySmall)

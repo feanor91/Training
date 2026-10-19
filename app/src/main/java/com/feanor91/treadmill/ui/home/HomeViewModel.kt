@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.feanor91.treadmill.AppContainer
 import com.feanor91.treadmill.data.ScheduledItem
-import com.feanor91.treadmill.data.toWorkoutSteps
 import com.feanor91.treadmill.domain.BleDevice
 import com.feanor91.treadmill.domain.ConnectionState
 import com.feanor91.treadmill.domain.WorkoutStep
@@ -64,13 +63,9 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     fun disconnectStrap() = c.heartRate.disconnect()
     fun dismissError() = c.ftms.clearError()
 
-    fun startScheduled(item: ScheduledItem) {
-        c.engine.start(item.plan.plan.name, item.plan.toWorkoutSteps(), item.schedule.id)
-    }
-
     /** Course libre : un palier sans limite de durée, à vitesse douce ; on ajuste ensuite en direct. */
-    fun startFree() {
+    fun freeRunSteps(): List<WorkoutStep> {
         val l = c.ftms.limits.value
-        c.engine.start("Course libre", listOf(WorkoutStep(0, l.clampSpeed(3.0), l.clampIncline(0.0), "Libre")))
+        return listOf(WorkoutStep(0, l.clampSpeed(2.0), l.clampIncline(0.0), "Libre"))
     }
 }

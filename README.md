@@ -14,6 +14,9 @@ Bluetooth LE via le profil standard **FTMS** (Fitness Machine Service, `0x1826`)
 | Séances programmées | plans à paliers (durée / vitesse / pente), planification à une date, récurrence hebdomadaire, « séances du jour » |
 | Robustesse | service au premier plan (écran éteint), reconnexion automatique, écran maintenu allumé |
 
+Sans tapis connecté, une séance démarre en **mode simulé** : les consignes tiennent lieu de mesures (chrono, vitesse, distance).
+Toucher une séance (du jour, du calendrier ou un plan) la lance directement.
+
 ## Écrans
 
 1. **Aujourd'hui** — connexion tapis + cardio, limites lues, séances du jour, course libre.
@@ -63,7 +66,7 @@ Prérequis : JDK 17 et Android SDK (API 35).
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Le workflow GitHub Actions (`.github/workflows/android.yml`) produit l'APK en artefact à chaque push.
+Le workflow GitHub Actions (`.github/workflows/android.yml`) produit l'APK en artefact **et** le publie dans une Release GitHub (`treadmill-ftms.apk`, lien direct depuis le téléphone) à chaque push.
 Autorisations demandées au premier scan : Bluetooth (Android 12+) ou Localisation (Android 7–11, exigée par le scan BLE), notifications (Android 13+).
 
 ## Compatibilité tapis

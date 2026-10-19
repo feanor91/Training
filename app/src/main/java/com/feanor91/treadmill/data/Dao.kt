@@ -19,7 +19,7 @@ interface TrainingDao {
     @Transaction @Query("SELECT * FROM plans WHERE id = :id")
     suspend fun getPlan(id: Long): PlanWithSteps?
 
-    @Query("SELECT COUNT(*) FROM plans") suspend fun planCount(): Int
+    @Query("SELECT COUNT(*) FROM plans WHERE name = :name") suspend fun planNameCount(name: String): Int
     @Insert suspend fun insertPlan(plan: PlanEntity): Long
     @Update suspend fun updatePlan(plan: PlanEntity)
     @Query("DELETE FROM plans WHERE id = :id") suspend fun deletePlan(id: Long)

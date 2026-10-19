@@ -1,6 +1,7 @@
 package com.feanor91.treadmill
 
 import android.app.Application
+import android.content.Context
 import androidx.room.Room
 import com.feanor91.treadmill.ble.FtmsClient
 import com.feanor91.treadmill.ble.HeartRateClient
@@ -28,7 +29,18 @@ class AppContainer(app: Application) {
     }
 
     init {
-        scope.launch { repository.seedIfEmpty() }
+        val prefs = app.getSharedPreferences("app", Context.MODE_PRIVATE)
+        if (prefs.getInt("seedVersion", 0) < SEED_VERSION) {
+            scope.launch {
+                repository.seedDefaults()
+                prefs.edit().putInt("seedVersion", SEED_VERSION).apply()
+            }
+        }
+    }
+
+    private companion object {
+        /** À incrémenter quand de nouveaux plans par défaut sont ajoutés. */
+        const val SEED_VERSION = 2
     }
 }
 

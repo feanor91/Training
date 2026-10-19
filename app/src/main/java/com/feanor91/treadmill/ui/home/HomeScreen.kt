@@ -44,15 +44,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.feanor91.treadmill.data.ScheduledItem
 import com.feanor91.treadmill.data.toWorkoutSteps
 import com.feanor91.treadmill.domain.ConnectionState
 import com.feanor91.treadmill.domain.MachineLimits
-import com.feanor91.treadmill.service.WorkoutService
 import com.feanor91.treadmill.ui.components.ProfileChart
 import com.feanor91.treadmill.ui.components.containerViewModel
+import com.feanor91.treadmill.ui.components.rememberWorkoutLauncher
 import com.feanor91.treadmill.ui.formatClock
 import com.feanor91.treadmill.ui.formatSpeed
 
@@ -66,8 +65,6 @@ private fun blePermissions(): Array<String> =
 @Composable
 fun HomeScreen() {
     val vm = containerViewModel { HomeViewModel(it) }
-    val context = LocalContext.current
-
     val connection by vm.connection.collectAsState()
     val limits by vm.limits.collectAsState()
     val metrics by vm.metrics.collectAsState()
@@ -94,11 +91,7 @@ fun HomeScreen() {
         permissionLauncher.launch(perms.toTypedArray())
     }
 
-    fun begin(action: () -> Unit) {
-        action()
-        WorkoutService.start(context)
-    }
-
+    val launch = rememberWorkoutLauncher()
     val ready = connection == ConnectionState.Ready
 
     Scaffold(topBar = { TopAppBar(title = { Text("Aujourd'hui") }) }) { padding ->
@@ -132,15 +125,22 @@ fun HomeScreen() {
                 }
             }
             items(today, key = { it.schedule.id }) { item ->
-                TodayCard(item, enabled = ready) { begin { vm.startScheduled(item) } }
+                TodayCard(item) { launch(item.plan.plan.name, item.plan.toWorkoutSteps(), item.schedule.id) }
             }
             item {
                 OutlinedButton(
-                    onClick = { begin(vm::startFree) }, enabled = ready, modifier = Modifier.fillMaxWidth(),
+                    onClick = { launch("Course libre", vm.freeRunSteps(), null) }, modifier = Modifier.fillMaxWidth(),
                 ) {
                     Icon(Icons.Default.PlayArrow, null)
                     Spacer(Modifier.width(8.dp))
                     Text("Course libre")
+                }
+                if (!ready) {
+                    Text(
+                        "Tapis non connecté : la séance démarre en mode simulé (chrono, vitesse et distance suivent vos consignes).",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
                 }
             }
         }
@@ -222,9 +222,9 @@ private fun StrapCard(name: String?, hr: Int?, onScan: () -> Unit, onDisconnect:
 }
 
 @Composable
-private fun TodayCard(item: ScheduledItem, enabled: Boolean, onStart: () -> Unit) {
+private fun TodayCard(item: ScheduledItem, onStart: () -> Unit) {
     val steps = item.plan.toWorkoutSteps()
-    Card(Modifier.fillMaxWidth()) {
+    Card(onClick = onStart, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -235,7 +235,7 @@ private fun TodayCard(item: ScheduledItem, enabled: Boolean, onStart: () -> Unit
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-                Button(onStart, enabled = enabled) { Text("Démarrer") }
+                Button(onStart) { Text("Démarrer") }
             }
             ProfileChart(steps, MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)
         }

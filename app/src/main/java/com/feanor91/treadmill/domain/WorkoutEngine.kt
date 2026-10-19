@@ -145,22 +145,26 @@ class WorkoutEngine(
 
     private fun tick() {
         val m = ftms.metrics.value
-        val speed = m.speedKmh ?: 0.0
+        val u = _ui.value
+        // Sans tapis connecté : mode simulé, les consignes tiennent lieu de mesures.
+        val simulated = ftms.state.value != ConnectionState.Ready
+        val speed = if (simulated) u.targetSpeed else m.speedKmh ?: 0.0
+        val incline = if (simulated) u.targetIncline else m.inclinePct ?: u.targetIncline
         val hr = heartRate.heartRate.value ?: m.heartRate
 
         integratedM += speed / 3.6
         speedSum += speed; speedN++
         if (hr != null) { hrSum += hr; hrN++; hrMax = maxOf(hrMax, hr) }
 
-        val dist = m.distanceM?.let { d -> (d - (distanceBase ?: d)).coerceAtLeast(0) } ?: integratedM.toInt()
+        val dist = m.distanceM?.takeUnless { simulated }
+            ?.let { d -> (d - (distanceBase ?: d)).coerceAtLeast(0) } ?: integratedM.toInt()
 
-        val u = _ui.value
         val step = u.currentStep ?: return
         val remaining = if (step.durationSec == 0) 0 else u.stepRemainingSec - 1
         _ui.update {
             it.copy(
                 elapsedSec = it.elapsedSec + 1, stepRemainingSec = remaining.coerceAtLeast(0),
-                speedKmh = speed, inclinePct = m.inclinePct ?: it.targetIncline, heartRate = hr, distanceM = dist,
+                speedKmh = speed, inclinePct = incline, heartRate = hr, distanceM = dist,
             )
         }
         if (step.durationSec > 0 && remaining <= 0) skipStep()
