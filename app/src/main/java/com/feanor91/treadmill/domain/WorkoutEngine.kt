@@ -29,6 +29,8 @@ data class WorkoutUi(
     val heartRate: Int? = null,
     val distanceM: Int = 0,
     val summary: SessionSummary? = null,
+    /** > 0 pendant le compte à rebours précédant le démarrage du tapis. */
+    val countdownSec: Int = 0,
 ) {
     val currentStep: WorkoutStep? get() = steps.getOrNull(stepIndex)
     val nextStep: WorkoutStep? get() = steps.getOrNull(stepIndex + 1)
@@ -47,6 +49,10 @@ class WorkoutEngine(
 ) {
     private val _ui = MutableStateFlow(WorkoutUi())
     val ui: StateFlow<WorkoutUi> = _ui.asStateFlow()
+
+    private companion object {
+        const val COUNTDOWN_SEC = 5
+    }
 
     private var job: Job? = null
     private var scheduleId: Long? = null
@@ -72,8 +78,15 @@ class WorkoutEngine(
         _ui.value = WorkoutUi(
             state = WorkoutState.Running, planName = name, steps = fixed,
             totalSec = if (fixed.any { it.durationSec == 0 }) 0 else fixed.sumOf { it.durationSec },
+            targetSpeed = fixed[0].speedKmh, targetIncline = fixed[0].inclinePct, stepRemainingSec = fixed[0].durationSec,
+            countdownSec = COUNTDOWN_SEC,
         )
         job = scope.launch {
+            for (n in COUNTDOWN_SEC downTo 1) {
+                _ui.update { it.copy(countdownSec = n) }
+                delay(1_000)
+            }
+            _ui.update { it.copy(countdownSec = 0) }
             ftms.requestControl()
             ftms.start()
             enterStep(0)
@@ -85,7 +98,7 @@ class WorkoutEngine(
     }
 
     fun pause() {
-        if (_ui.value.state != WorkoutState.Running) return
+        if (_ui.value.state != WorkoutState.Running || _ui.value.countdownSec > 0) return
         _ui.update { it.copy(state = WorkoutState.Paused) }
         scope.launch { ftms.pause() }
     }
@@ -101,25 +114,32 @@ class WorkoutEngine(
     }
 
     fun stop() {
-        if (running) finish(completed = false)
+        if (!running) return
+        if (_ui.value.countdownSec > 0) {
+            // Annulation avant le départ : le tapis n'a pas été sollicité, rien à enregistrer.
+            job?.cancel()
+            _ui.value = WorkoutUi()
+        } else {
+            finish(completed = false)
+        }
     }
 
     fun skipStep() {
         val u = _ui.value
-        if (!running) return
+        if (!running || u.countdownSec > 0) return
         if (u.stepIndex + 1 < u.steps.size) enterStep(u.stepIndex + 1) else finish(completed = true)
     }
 
     /** Ajustement manuel ; reste valable jusqu'au palier suivant. */
     fun adjustSpeed(deltaKmh: Double) {
-        if (!running) return
+        if (!running || _ui.value.countdownSec > 0) return
         val v = ftms.limits.value.clampSpeed(_ui.value.targetSpeed + deltaKmh)
         _ui.update { it.copy(targetSpeed = v) }
         scope.launch { ftms.setSpeed(v) }
     }
 
     fun adjustIncline(deltaPct: Double) {
-        if (!running) return
+        if (!running || _ui.value.countdownSec > 0) return
         val v = ftms.limits.value.clampIncline(_ui.value.targetIncline + deltaPct)
         _ui.update { it.copy(targetIncline = v) }
         scope.launch { ftms.setIncline(v) }

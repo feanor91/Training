@@ -65,6 +65,7 @@ fun WorkoutScreen() {
     KeepScreenOn()
     BackHandler { confirmStop = true }
 
+    Box(Modifier.fillMaxSize().background(WorkoutColors.Background)) {
     Column(
         Modifier.fillMaxSize().background(WorkoutColors.Background).statusBarsPadding().navigationBarsPadding().padding(20.dp),
         verticalArrangement = Arrangement.SpaceBetween,
@@ -145,6 +146,21 @@ fun WorkoutScreen() {
                 }
             }
         }
+    }
+
+    if (ui.countdownSec > 0) {
+        Column(
+            Modifier.fillMaxSize().background(WorkoutColors.Background).statusBarsPadding().navigationBarsPadding(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text("Le tapis démarre dans", color = WorkoutColors.Dim, fontSize = 20.sp)
+            Text(ui.countdownSec.toString(), color = WorkoutColors.Speed, fontSize = 180.sp, fontWeight = FontWeight.Bold)
+            Text(ui.planName, color = Color.White, fontSize = 18.sp)
+            Spacer(Modifier.height(32.dp))
+            TextButton({ engine.stop() }) { Text("Annuler", color = WorkoutColors.Dim) }
+        }
+    }
     }
 
     if (confirmStop) {
