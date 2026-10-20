@@ -59,8 +59,11 @@ class WorkoutEngine(
     val ui: StateFlow<WorkoutUi> = _ui.asStateFlow()
 
     private companion object {
-        /** Même durée que le compte à rebours interne du tapis, qui démarre dès l'envoi de la commande Start. */
-        const val COUNTDOWN_SEC = 3
+        /**
+         * Durée du compte à rebours interne du tapis (5 s sur le Care Fitness CT 750), qui démarre dès l'envoi
+         * de la commande Start. Les consignes envoyées avant la fin sont ignorées par le tapis.
+         */
+        const val COUNTDOWN_SEC = 5
         const val SAMPLE_EVERY_SEC = 5
     }
 
@@ -80,6 +83,8 @@ class WorkoutEngine(
     private val zoneSeconds = IntArray(6)
     private val hrWindow = ArrayDeque<Int>()
     private var stepTick = 0
+    private var pushTick = 0
+    private var pushRetries = 0
     private val samples = ArrayList<Sample>()
 
     val running get() = _ui.value.state == WorkoutState.Running || _ui.value.state == WorkoutState.Paused
@@ -131,6 +136,7 @@ class WorkoutEngine(
         scope.launch {
             ftms.start()
             val u = _ui.value
+            targetsPushed()
             push(u.targetSpeed, u.targetIncline)
         }
     }
@@ -158,6 +164,7 @@ class WorkoutEngine(
         if (!running || _ui.value.countdownSec > 0) return
         val v = ftms.limits.value.clampSpeed(_ui.value.targetSpeed + deltaKmh)
         _ui.update { it.copy(targetSpeed = v) }
+        targetsPushed()
         scope.launch { ftms.setSpeed(v) }
     }
 
@@ -165,6 +172,7 @@ class WorkoutEngine(
         if (!running || _ui.value.countdownSec > 0) return
         val v = ftms.limits.value.clampIncline(_ui.value.targetIncline + deltaPct)
         _ui.update { it.copy(targetIncline = v) }
+        targetsPushed()
         scope.launch { ftms.setIncline(v) }
     }
 
@@ -177,6 +185,7 @@ class WorkoutEngine(
         val step = _ui.value.steps[index]
         stepTick = 0
         hrWindow.clear()
+        targetsPushed()
         _ui.update {
             it.copy(stepIndex = index, stepRemainingSec = step.durationSec, targetSpeed = step.speedKmh, targetIncline = step.inclinePct)
         }
@@ -212,6 +221,7 @@ class WorkoutEngine(
         if (hr != null) zoneSeconds[zone]++
         stepTick++
         if (step.targetZone != null && hr != null) controlSpeed(step, u, hr, maxHr)
+        if (!simulated && u.countdownSec == 0) enforceTargets(m.speedKmh)
         val remaining = if (step.durationSec == 0) 0 else u.stepRemainingSec - 1
         _ui.update {
             it.copy(
@@ -249,7 +259,30 @@ class WorkoutEngine(
         val v = limits.clampSpeed((u.targetSpeed + delta).coerceIn(minOf(lo, hi), maxOf(lo, hi)))
         if (v != u.targetSpeed) {
             _ui.update { it.copy(targetSpeed = v) }
+            targetsPushed()
             scope.launch { ftms.setSpeed(v) }
+        }
+    }
+
+    /** Une consigne vient d'être envoyée : on laisse 6 s au tapis avant de vérifier qu'elle est appliquée. */
+    private fun targetsPushed() {
+        pushTick = 0
+        pushRetries = 0
+    }
+
+    /**
+     * Le tapis ignore parfois une consigne (par exemple pendant son compte à rebours de départ) sans signaler
+     * d'erreur : si la vitesse mesurée reste éloignée de la consigne, on la renvoie (6 s d'intervalle, 6 fois au plus).
+     */
+    private fun enforceTargets(measuredKmh: Double?) {
+        pushTick++
+        val measured = measuredKmh ?: return
+        val u = _ui.value
+        if (kotlin.math.abs(measured - u.targetSpeed) <= 0.35) return
+        if (pushTick >= 6 && pushRetries < 6) {
+            pushRetries++
+            pushTick = 0
+            scope.launch { push(u.targetSpeed, u.targetIncline) }
         }
     }
 
