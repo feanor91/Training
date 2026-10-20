@@ -83,8 +83,9 @@ dependencies {
     implementation("androidx.health.connect:connect-client:1.1.0")
     implementation("com.google.android.gms:play-services-wearable:19.0.0")
     implementation("androidx.wear:wear-remote-interactions:1.1.0")
-    // Type de retour de RemoteActivityHelper, absent du classpath de compilation sinon.
-    implementation("com.google.guava:listenablefuture:1.0")
+    // Type de retour (ListenableFuture) de RemoteActivityHelper. L'artefact « listenablefuture » seul est
+    // écrasé par la version vide 9999.0 que d'autres bibliothèques imposent : on prend Guava lui-même.
+    implementation("com.google.guava:guava:33.3.1-android")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
 
     testImplementation("junit:junit:4.13.2")
