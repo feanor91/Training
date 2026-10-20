@@ -18,6 +18,9 @@ interface TrainingDao {
     @Transaction @Query("SELECT * FROM plans WHERE programId IS NULL ORDER BY favorite DESC, name")
     fun observePlans(): Flow<List<PlanWithSteps>>
 
+    @Transaction @Query("SELECT * FROM plans WHERE programId IS NULL ORDER BY favorite DESC, name")
+    suspend fun plansOnce(): List<PlanWithSteps>
+
     @Transaction @Query("SELECT * FROM plans WHERE id = :id")
     suspend fun getPlan(id: Long): PlanWithSteps?
 

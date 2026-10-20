@@ -71,9 +71,12 @@ class AppContainer(private val app: Application) {
     fun refreshWidget() = TodayWidgetProvider.refresh(app)
 
     /** Démarre la séance du calendrier [scheduleId] (ou une course libre) : utilisé par le widget. */
-    suspend fun startFromWidget(scheduleId: Long, free: Boolean): Boolean {
+    suspend fun startFromWidget(scheduleId: Long, free: Boolean, planId: Long = -1): Boolean {
         if (engine.running) return false
-        if (scheduleId >= 0) {
+        if (planId >= 0) {
+            val plan = repository.plan(planId) ?: return false
+            engine.start(plan.plan.name, plan.toWorkoutSteps(), null)
+        } else if (scheduleId >= 0) {
             val item = repository.scheduledItem(scheduleId) ?: return false
             engine.start(item.plan.plan.name, item.plan.toWorkoutSteps(), item.schedule.id)
         } else if (free) {

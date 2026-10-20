@@ -65,13 +65,15 @@ class MainActivity : ComponentActivity() {
     private fun handleWidgetIntent(intent: Intent?) {
         val scheduleId = intent?.getLongExtra(TodayWidgetProvider.EXTRA_START_SCHEDULE_ID, -1L) ?: -1L
         val free = intent?.getBooleanExtra(TodayWidgetProvider.EXTRA_START_FREE, false) == true
-        if (scheduleId < 0 && !free) return
+        val planId = intent?.getLongExtra(TodayWidgetProvider.EXTRA_START_PLAN_ID, -1L) ?: -1L
+        if (scheduleId < 0 && !free && planId < 0) return
         // L'ordre ne doit être exécuté qu'une fois (rotation, retour au premier plan).
         intent?.removeExtra(TodayWidgetProvider.EXTRA_START_SCHEDULE_ID)
         intent?.removeExtra(TodayWidgetProvider.EXTRA_START_FREE)
+        intent?.removeExtra(TodayWidgetProvider.EXTRA_START_PLAN_ID)
         val container = (application as TreadmillApp).container
         container.scope.launch {
-            if (container.startFromWidget(scheduleId, free)) runCatching { WorkoutService.start(this@MainActivity) }
+            if (container.startFromWidget(scheduleId, free, planId)) runCatching { WorkoutService.start(this@MainActivity) }
         }
     }
 }

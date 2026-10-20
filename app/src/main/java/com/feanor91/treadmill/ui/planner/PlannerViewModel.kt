@@ -44,8 +44,14 @@ class PlannerViewModel(private val c: AppContainer) : ViewModel() {
         runCatching { c.reminders.reschedule() }
         c.refreshWidget()
     }
-    fun deletePlan(id: Long) = viewModelScope.launch { c.repository.deletePlan(id) }
-    fun toggleFavorite(p: PlanWithSteps) = viewModelScope.launch { c.repository.setFavorite(p.plan.id, !p.plan.favorite) }
+    fun deletePlan(id: Long) = viewModelScope.launch {
+        c.repository.deletePlan(id)
+        c.refreshWidget()
+    }
+    fun toggleFavorite(p: PlanWithSteps) = viewModelScope.launch {
+        c.repository.setFavorite(p.plan.id, !p.plan.favorite)
+        c.refreshWidget()
+    }
 }
 
 /** Palier en cours d'édition (état UI, converti en StepEntity à l'enregistrement). */

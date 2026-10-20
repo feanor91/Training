@@ -19,6 +19,7 @@ class TrainingRepository(private val db: AppDatabase) {
         dao.observeUpcoming(LocalDate.now().toEpochDay(), limit)
 
     suspend fun plan(id: Long) = dao.getPlan(id)
+    suspend fun plansOnce() = dao.plansOnce()
     suspend fun savePlan(plan: PlanEntity, steps: List<StepEntity>): Long = db.withTransaction {
         val id = if (plan.id == 0L) dao.insertPlan(plan) else { dao.updatePlan(plan); dao.deleteSteps(plan.id); plan.id }
         dao.insertSteps(steps.mapIndexed { i, s -> s.copy(id = 0, planId = id, position = i) })
