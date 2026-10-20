@@ -48,6 +48,7 @@ class FtmsClient(private val context: Context, private val scope: CoroutineScope
     private var lastDevice: BleDevice? = null
     private var wantConnected = false
     private var reconnectJob: Job? = null
+    private var silent = false
 
     private companion object {
         const val CP_NO_RESPONSE = -1
@@ -63,9 +64,11 @@ class FtmsClient(private val context: Context, private val scope: CoroutineScope
 
     fun clearError() { _error.value = null }
 
-    suspend fun connect(device: BleDevice): Boolean {
+    /** [silent] : pas de message d'erreur en cas d'échec (tentatives automatiques, tapis éteint). */
+    suspend fun connect(device: BleDevice, silent: Boolean = false): Boolean {
         wantConnected = true
         lastDevice = device
+        this.silent = silent
         return doConnect(device)
     }
 
@@ -200,7 +203,7 @@ class FtmsClient(private val context: Context, private val scope: CoroutineScope
     }
 
     private fun fail(msg: String): Boolean {
-        _error.value = msg
+        if (!silent) _error.value = msg
         gatt?.close()
         gatt = null
         wantConnected = false

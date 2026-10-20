@@ -1,12 +1,18 @@
 package com.feanor91.treadmill
 
+import android.Manifest
 import android.app.Application
+import android.content.pm.PackageManager
+import android.os.Build
 import android.content.Context
 import androidx.room.Room
 import com.feanor91.treadmill.ble.FtmsClient
 import com.feanor91.treadmill.ble.HeartRateClient
 import com.feanor91.treadmill.data.AppDatabase
+import com.feanor91.treadmill.data.DeviceStore
 import com.feanor91.treadmill.data.ProfileStore
+import com.feanor91.treadmill.domain.ConnectionState
+import kotlinx.coroutines.delay
 import com.feanor91.treadmill.health.ExportableSession
 import com.feanor91.treadmill.health.HealthConnectGateway
 import com.feanor91.treadmill.data.toWorkoutSteps
@@ -36,6 +42,7 @@ class AppContainer(private val app: Application) {
     val heartRate = HeartRateClient(app)
 
     val profileStore = ProfileStore(app)
+    val deviceStore = DeviceStore(app)
     val health = HealthConnectGateway(app)
 
     val wear = WearBridge(app, scope, autoOpenWatch = { profileStore.autoOpenWatch.value })
@@ -70,6 +77,37 @@ class AppContainer(private val app: Application) {
 
     fun refreshWidget() = TodayWidgetProvider.refresh(app)
 
+    private var reconnecting = false
+
+    private fun canUseBluetooth() = ftms.bluetoothEnabled &&
+        (Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            app.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED)
+
+    /**
+     * Reconnecte le dernier tapis et le dernier capteur cardiaque connus. Appelé au démarrage de l'application
+     * et à chaque retour au premier plan : après une mise à jour, plus besoin de refaire l'association.
+     * Silencieux : un tapis éteint n'affiche pas d'erreur.
+     */
+    fun tryReconnect() {
+        if (reconnecting || !deviceStore.autoReconnect.value || !canUseBluetooth()) return
+        reconnecting = true
+        scope.launch {
+            try {
+                val tm = deviceStore.treadmill.value
+                if (tm != null && ftms.state.value == ConnectionState.Disconnected && !engine.running) {
+                    for (attempt in 1..2) {
+                        if (ftms.connect(tm, silent = true)) break
+                        delay(4_000)
+                    }
+                }
+                val strap = deviceStore.strap.value
+                if (strap != null && heartRate.deviceName.value == null) heartRate.connect(strap)
+            } finally {
+                reconnecting = false
+            }
+        }
+    }
+
     /** Démarre la séance du calendrier [scheduleId] (ou une course libre) : utilisé par le widget. */
     suspend fun startFromWidget(scheduleId: Long, free: Boolean, planId: Long = -1): Boolean {
         if (engine.running) return false
@@ -88,6 +126,7 @@ class AppContainer(private val app: Application) {
 
     init {
         wear.attach(engine)
+        tryReconnect()
         scope.launch { runCatching { refreshWidget() } }
         scope.launch { runCatching { reminders.reschedule() } }
         val prefs = app.getSharedPreferences("app", Context.MODE_PRIVATE)

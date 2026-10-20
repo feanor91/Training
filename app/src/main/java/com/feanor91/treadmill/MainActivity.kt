@@ -55,6 +55,12 @@ class MainActivity : ComponentActivity() {
         handleWidgetIntent(intent)
     }
 
+    override fun onStart() {
+        super.onStart()
+        // Retour au premier plan : reconnecte le tapis et le capteur s'ils sont déconnectés.
+        (application as TreadmillApp).container.tryReconnect()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)

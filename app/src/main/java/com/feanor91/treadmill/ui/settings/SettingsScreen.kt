@@ -101,12 +101,34 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
         stopScan()
         // La connexion doit survivre au ViewModel : on la lance dans la portée applicative.
         c.scope.launch {
-            if (target == ScanTarget.Treadmill) c.ftms.connect(device) else c.heartRate.connect(device)
+            val ok = if (target == ScanTarget.Treadmill) c.ftms.connect(device) else c.heartRate.connect(device)
+            if (ok) {
+                // Mémorisé pour se reconnecter tout seul après une mise à jour ou un redémarrage.
+                if (target == ScanTarget.Treadmill) c.deviceStore.saveTreadmill(device) else c.deviceStore.saveStrap(device)
+            }
         }
     }
 
-    fun disconnectTreadmill() = c.ftms.disconnect()
-    fun disconnectStrap() = c.heartRate.disconnect()
+    val savedTreadmill = c.deviceStore.treadmill
+    val autoReconnect = c.deviceStore.autoReconnect
+    fun setAutoReconnect(v: Boolean) = c.deviceStore.setAutoReconnect(v)
+
+    /** Reconnexion manuelle au dernier tapis connu (avec message d'erreur si elle échoue). */
+    fun reconnectTreadmill() {
+        c.deviceStore.treadmill.value?.let { d -> c.scope.launch { c.ftms.connect(d) } }
+    }
+
+    fun forgetTreadmill() {
+        c.ftms.disconnect()
+        c.deviceStore.clearTreadmill()
+    }
+
+    /** « Déconnecter » = déconnecter et oublier : plus de reconnexion automatique à ce tapis. */
+    fun disconnectTreadmill() = forgetTreadmill()
+    fun disconnectStrap() {
+        c.heartRate.disconnect()
+        c.deviceStore.clearStrap()
+    }
     fun dismissError() = c.ftms.clearError()
 }
 
@@ -133,6 +155,8 @@ fun SettingsScreen(onOpenHealth: () -> Unit) {
     val watchName by vm.watchName.collectAsState()
     val watchHr by vm.watchHr.collectAsState()
     val autoOpen by vm.autoOpenWatch.collectAsState()
+    val savedTreadmill by vm.savedTreadmill.collectAsState()
+    val autoReconnect by vm.autoReconnect.collectAsState()
     val devices by vm.devices.collectAsState()
     val scanTarget by vm.scanTarget.collectAsState()
     val scanError by vm.scanError.collectAsState()
@@ -168,7 +192,20 @@ fun SettingsScreen(onOpenHealth: () -> Unit) {
                     onScan = { requestScan(ScanTarget.Treadmill) },
                     onDisconnect = vm::disconnectTreadmill,
                     onDismissError = vm::dismissError,
+                    saved = savedTreadmill, onReconnect = vm::reconnectTreadmill, onForget = vm::forgetTreadmill,
                 )
+            }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Reconnexion automatique", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Retrouve le tapis et le capteur cardiaque à l'ouverture de l'appli (utile après une mise à jour).",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    androidx.compose.material3.Switch(autoReconnect, vm::setAutoReconnect)
+                }
             }
             item { SectionTitle("Capteur cardiaque") }
             item {
@@ -214,6 +251,7 @@ private fun SectionTitle(text: String) {
 private fun TreadmillCard(
     state: ConnectionState, name: String?, limits: MachineLimits, speed: Double?, error: String?,
     onScan: () -> Unit, onDisconnect: () -> Unit, onDismissError: () -> Unit,
+    saved: BleDevice? = null, onReconnect: () -> Unit = {}, onForget: () -> Unit = {},
 ) {
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -250,6 +288,12 @@ private fun TreadmillCard(
                 OutlinedButton(onDisconnect) { Text("Déconnecter") }
             } else {
                 Button(onScan, enabled = state != ConnectionState.Connecting) { Text("Rechercher un tapis") }
+                if (saved != null) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(onReconnect, enabled = state != ConnectionState.Connecting) { Text("Reconnecter ${saved.name}") }
+                        TextButton(onForget) { Text("Oublier") }
+                    }
+                }
             }
             if (error != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
