@@ -14,6 +14,7 @@ data class PlanEntity(
     val description: String = "",
     /** Non nul pour les séances générées par un programme (masquées de la liste des plans). */
     val programId: Long? = null,
+    val favorite: Boolean = false,
 )
 
 /** Programme d'objectif : un ensemble de séances réparties sur un calendrier, avec rappel. */

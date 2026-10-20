@@ -9,7 +9,10 @@ import com.feanor91.treadmill.data.AppDatabase
 import com.feanor91.treadmill.data.ProfileStore
 import com.feanor91.treadmill.health.ExportableSession
 import com.feanor91.treadmill.health.HealthConnectGateway
+import com.feanor91.treadmill.data.toWorkoutSteps
+import com.feanor91.treadmill.domain.WorkoutStep
 import com.feanor91.treadmill.reminders.ReminderScheduler
+import com.feanor91.treadmill.widget.TodayWidgetProvider
 import com.feanor91.treadmill.wear.WearBridge
 import com.feanor91.treadmill.data.TrainingRepository
 import com.feanor91.treadmill.domain.WorkoutEngine
@@ -19,11 +22,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /** Racine de composition manuelle : un seul client BLE et un seul moteur de séance pour tout le processus. */
-class AppContainer(app: Application) {
+class AppContainer(private val app: Application) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private val db = Room.databaseBuilder(app, AppDatabase::class.java, "training.db")
-        .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+        .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
         .build()
     val repository = TrainingRepository(db)
 
@@ -56,6 +59,7 @@ class AppContainer(app: Application) {
                         summary.activeKcal, summary.avgSpeedKmh, summary.steps, summary.samples,
                     ),
                 )
+                refreshWidget()
                 if (ok) { repository.markExported(id); "✓ Séance envoyée à Health Connect" }
                 else "Non envoyée à Health Connect : autorisez-le dans l'onglet Santé, puis utilisez « Envoyer » dans l'historique."
             }.getOrElse { "Envoi à Health Connect impossible (${it.message}) : réessayez depuis l'historique." }
@@ -64,8 +68,24 @@ class AppContainer(app: Application) {
         }
     }
 
+    fun refreshWidget() = TodayWidgetProvider.refresh(app)
+
+    /** Démarre la séance du calendrier [scheduleId] (ou une course libre) : utilisé par le widget. */
+    suspend fun startFromWidget(scheduleId: Long, free: Boolean): Boolean {
+        if (engine.running) return false
+        if (scheduleId >= 0) {
+            val item = repository.scheduledItem(scheduleId) ?: return false
+            engine.start(item.plan.plan.name, item.plan.toWorkoutSteps(), item.schedule.id)
+        } else if (free) {
+            val l = ftms.limits.value
+            engine.start("Course libre", listOf(WorkoutStep(0, l.clampSpeed(2.0), l.clampIncline(0.0), "Libre")))
+        } else return false
+        return true
+    }
+
     init {
         wear.attach(engine)
+        scope.launch { runCatching { refreshWidget() } }
         scope.launch { runCatching { reminders.reschedule() } }
         val prefs = app.getSharedPreferences("app", Context.MODE_PRIVATE)
         if (prefs.getInt("seedVersion", 0) < SEED_VERSION) {

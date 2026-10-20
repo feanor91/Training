@@ -43,6 +43,29 @@ class TrainingRepository(private val db: AppDatabase) {
         dao.deleteProgram(id)
     }
 
+    suspend fun setFavorite(id: Long, favorite: Boolean) = dao.setFavorite(id, favorite)
+    suspend fun program(id: Long) = dao.getProgram(id)
+    suspend fun completedDays(programId: Long): Set<LocalDate> =
+        dao.completedDaysOfProgram(programId).map { LocalDate.ofEpochDay(it) }.toSet()
+    suspend fun scheduleDay(id: Long): LocalDate? = dao.scheduleDay(id)?.let { LocalDate.ofEpochDay(it) }
+    suspend fun moveSchedule(id: Long, day: LocalDate) = dao.updateScheduleDay(id, day.toEpochDay())
+    suspend fun scheduledItem(id: Long) = dao.scheduledItem(id)
+    suspend fun firstOpenToday() = dao.firstOpenOnDay(LocalDate.now().toEpochDay())
+
+    /**
+     * Modifie un programme : les séances déjà faites sont conservées, les autres sont régénérées
+     * avec les nouveaux réglages (liste [sessions] déjà filtrée sur les dates à venir).
+     */
+    suspend fun updateProgram(program: ProgramEntity, sessions: List<GeneratedSession>) = db.withTransaction {
+        dao.updateProgramEntity(program)
+        dao.deleteOpenPlansOfProgram(program.id)
+        for (s in sessions) {
+            val planId = dao.insertPlan(PlanEntity(name = s.title, description = s.description, programId = program.id))
+            dao.insertSteps(s.steps.mapIndexed { i, st -> st.toEntity(planId, i) })
+            dao.insertSchedule(listOf(ScheduleEntity(planId = planId, epochDay = s.date.toEpochDay())))
+        }
+    }
+
     suspend fun reminderRows(fromDay: Long) = dao.reminderRows(fromDay)
     suspend fun isScheduleCompleted(id: Long) = dao.isCompleted(id) ?: true
 

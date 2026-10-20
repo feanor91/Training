@@ -31,14 +31,21 @@ class PlannerViewModel(private val c: AppContainer) : ViewModel() {
     fun deleteProgram(id: Long) = viewModelScope.launch {
         c.repository.deleteProgram(id)
         runCatching { c.reminders.reschedule() }
+        c.refreshWidget()
     }
 
     fun schedule(planId: Long, date: LocalDate, weeks: Int) = viewModelScope.launch {
         c.repository.schedule(planId, date, weeks)
+        c.refreshWidget()
     }
 
-    fun unschedule(item: ScheduleEntity) = viewModelScope.launch { c.repository.unschedule(item) }
+    fun unschedule(item: ScheduleEntity) = viewModelScope.launch {
+        c.repository.unschedule(item)
+        runCatching { c.reminders.reschedule() }
+        c.refreshWidget()
+    }
     fun deletePlan(id: Long) = viewModelScope.launch { c.repository.deletePlan(id) }
+    fun toggleFavorite(p: PlanWithSteps) = viewModelScope.launch { c.repository.setFavorite(p.plan.id, !p.plan.favorite) }
 }
 
 /** Palier en cours d'édition (état UI, converti en StepEntity à l'enregistrement). */
@@ -58,9 +65,14 @@ data class PlanDraft(
     val name: String = "",
     val description: String = "",
     val steps: List<DraftStep> = listOf(DraftStep(label = "Échauffement")),
+    /** Conservés tels quels à l'enregistrement. */
+    val programId: Long? = null,
+    val favorite: Boolean = false,
+    /** Date de la séance du calendrier éditée (null = édition d'un plan hors calendrier). */
+    val scheduleDay: LocalDate? = null,
 )
 
-class PlanEditorViewModel(private val c: AppContainer, private val planId: Long) : ViewModel() {
+class PlanEditorViewModel(private val c: AppContainer, private val planId: Long, private val scheduleId: Long = -1) : ViewModel() {
     val draft = MutableStateFlow(PlanDraft())
     val limits: StateFlow<MachineLimits> = c.ftms.limits
     val profile = c.profileStore.profile
@@ -77,11 +89,15 @@ class PlanEditorViewModel(private val c: AppContainer, private val planId: Long)
                             it.minSpeedKmh ?: (it.speedKmh - 1.0), it.maxSpeedKmh ?: (it.speedKmh + 1.0),
                         )
                     },
+                    programId = p.plan.programId, favorite = p.plan.favorite,
+                    scheduleDay = if (scheduleId >= 0) c.repository.scheduleDay(scheduleId) else null,
                 )
             }
         }
     }
 
+    fun setScheduleDay(day: LocalDate) = draft.update { it.copy(scheduleDay = day) }
+    fun setFavorite(v: Boolean) = draft.update { it.copy(favorite = v) }
     fun setName(v: String) = draft.update { it.copy(name = v) }
     fun setDescription(v: String) = draft.update { it.copy(description = v) }
 
@@ -109,7 +125,7 @@ class PlanEditorViewModel(private val c: AppContainer, private val planId: Long)
         if (d.name.isBlank() || d.steps.isEmpty()) return
         viewModelScope.launch {
             c.repository.savePlan(
-                PlanEntity(d.id, d.name.trim(), d.description.trim()),
+                PlanEntity(d.id, d.name.trim(), d.description.trim(), d.programId, d.favorite),
                 d.steps.mapIndexed { i, s ->
                     StepEntity(
                         planId = d.id, position = i, durationSec = s.durationSec, speedKmh = s.speedKmh, inclinePct = s.inclinePct,
@@ -118,6 +134,9 @@ class PlanEditorViewModel(private val c: AppContainer, private val planId: Long)
                     )
                 },
             )
+            if (scheduleId >= 0) d.scheduleDay?.let { c.repository.moveSchedule(scheduleId, it) }
+            runCatching { c.reminders.reschedule() }
+            c.refreshWidget()
             saved.value = true
         }
     }

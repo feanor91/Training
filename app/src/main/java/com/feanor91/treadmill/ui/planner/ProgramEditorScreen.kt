@@ -88,8 +88,27 @@ data class ProgramDraft(
     val displayName get() = name.ifBlank { "${goal.label} · $totalDays jours" }
 }
 
-class ProgramEditorViewModel(private val c: AppContainer) : ViewModel() {
+class ProgramEditorViewModel(private val c: AppContainer, private val programId: Long = -1) : ViewModel() {
     val draft = MutableStateFlow(ProgramDraft())
+    val editing get() = programId >= 0
+    val completedDays = MutableStateFlow<Set<LocalDate>>(emptySet())
+
+    init {
+        if (editing) viewModelScope.launch {
+            val p = c.repository.program(programId) ?: return@launch
+            completedDays.value = c.repository.completedDays(programId)
+            draft.value = ProgramDraft(
+                goal = runCatching { ProgramGoal.valueOf(p.goal) }.getOrDefault(ProgramGoal.WEIGHT_LOSS),
+                totalDays = p.totalDays,
+                weekdays = DayOfWeek.entries.filter { (p.weekdaysMask and (1 shl (it.value - 1))) != 0 }.toSet(),
+                start = LocalDate.ofEpochDay(p.startEpochDay),
+                maxSpeedKmh = p.maxSpeedKmh,
+                reminderOn = p.reminderMinutes >= 0,
+                reminderMinutes = if (p.reminderMinutes >= 0) p.reminderMinutes else 20 * 60,
+                name = p.name,
+            )
+        }
+    }
     val limits: StateFlow<MachineLimits> = c.ftms.limits
     val saved = MutableStateFlow(false)
 
@@ -97,38 +116,44 @@ class ProgramEditorViewModel(private val c: AppContainer) : ViewModel() {
 
     fun sessions(d: ProgramDraft): List<GeneratedSession> {
         val l = limits.value.takeIf { it.fromDevice }
-        return ProgramGenerator.generate(d.goal, d.start, d.totalDays, d.weekdays, d.maxSpeedKmh, l)
+        val all = ProgramGenerator.generate(d.goal, d.start, d.totalDays, d.weekdays, d.maxSpeedKmh, l)
+        if (!editing) return all
+        // Modification : on ne régénère que les séances à venir, celles déjà faites sont conservées.
+        val today = LocalDate.now()
+        val done = completedDays.value
+        return all.filter { it.date >= today && it.date !in done }
     }
 
     fun create() {
         val d = draft.value
         val sessions = sessions(d)
-        if (sessions.isEmpty()) return
+        if (sessions.isEmpty() && !editing) return
         viewModelScope.launch {
-            c.repository.createProgram(
-                ProgramEntity(
-                    name = d.displayName, goal = d.goal.name, startEpochDay = d.start.toEpochDay(), totalDays = d.totalDays,
-                    weekdaysMask = d.weekdays.fold(0) { m, day -> m or (1 shl (day.value - 1)) },
-                    reminderMinutes = if (d.reminderOn) d.reminderMinutes else -1, maxSpeedKmh = d.maxSpeedKmh,
-                ),
-                sessions,
+            val entity = ProgramEntity(
+                id = if (editing) programId else 0,
+                name = d.displayName, goal = d.goal.name, startEpochDay = d.start.toEpochDay(), totalDays = d.totalDays,
+                weekdaysMask = d.weekdays.fold(0) { m, day -> m or (1 shl (day.value - 1)) },
+                reminderMinutes = if (d.reminderOn) d.reminderMinutes else -1, maxSpeedKmh = d.maxSpeedKmh,
             )
+            if (editing) c.repository.updateProgram(entity, sessions) else c.repository.createProgram(entity, sessions)
             runCatching { c.reminders.reschedule() }
+            c.refreshWidget()
             saved.value = true
         }
     }
 }
 
 @Composable
-fun ProgramEditorScreen(onClose: () -> Unit) {
-    val vm = containerViewModel { ProgramEditorViewModel(it) }
+fun ProgramEditorScreen(programId: Long = -1, onClose: () -> Unit) {
+    val vm = containerViewModel(key = "program$programId") { ProgramEditorViewModel(it, programId) }
+    val completed by vm.completedDays.collectAsState()
     val d by vm.draft.collectAsState()
     val limits by vm.limits.collectAsState()
     val saved by vm.saved.collectAsState()
     val context = LocalContext.current
     LaunchedEffect(saved) { if (saved) onClose() }
 
-    val sessions = remember(d, limits) { vm.sessions(d) }
+    val sessions = remember(d, limits, completed) { vm.sessions(d) }
     val dateFmt = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
     var pickDate by remember { mutableStateOf(false) }
     var pickTime by remember { mutableStateOf(false) }
@@ -145,7 +170,7 @@ fun ProgramEditorScreen(onClose: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Nouveau programme") },
+                title = { Text(if (vm.editing) "Modifier le programme" else "Nouveau programme") },
                 navigationIcon = { IconButton(onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour") } },
             )
         },
@@ -228,7 +253,8 @@ fun ProgramEditorScreen(onClose: () -> Unit) {
             item {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Aperçu : ${sessions.size} séances", style = MaterialTheme.typography.titleMedium)
+                        Text(if (vm.editing) "Séances à venir régénérées : ${sessions.size}" else "Aperçu : ${sessions.size} séances", style = MaterialTheme.typography.titleMedium)
+                        if (vm.editing) Text("Les séances déjà faites sont conservées ; les autres sont recalculées avec ces réglages.", style = MaterialTheme.typography.bodySmall)
                         if (sessions.isEmpty()) Text("Aucune séance : choisissez au moins un jour dans la période.")
                         else Text(
                             "De ${formatClock(sessions.first().totalSec)} à ${formatClock(sessions.last().totalSec)} par séance, " +
@@ -251,7 +277,9 @@ fun ProgramEditorScreen(onClose: () -> Unit) {
                 }
             }
             item {
-                Button(::createWithPermission, Modifier.fillMaxWidth(), enabled = sessions.isNotEmpty()) { Text("Créer le programme") }
+                Button(::createWithPermission, Modifier.fillMaxWidth(), enabled = sessions.isNotEmpty() || vm.editing) {
+                    Text(if (vm.editing) "Enregistrer les modifications" else "Créer le programme")
+                }
             }
         }
     }

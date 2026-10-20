@@ -17,11 +17,15 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -56,7 +60,12 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 
 @Composable
-fun PlannerScreen(onEditPlan: (Long) -> Unit, onNewProgram: () -> Unit) {
+fun PlannerScreen(
+    onEditPlan: (Long) -> Unit,
+    onEditSession: (planId: Long, scheduleId: Long) -> Unit,
+    onNewProgram: () -> Unit,
+    onEditProgram: (Long) -> Unit,
+) {
     val vm = containerViewModel { PlannerViewModel(it) }
     val plans by vm.plans.collectAsState()
     val upcoming by vm.upcoming.collectAsState()
@@ -85,7 +94,7 @@ fun PlannerScreen(onEditPlan: (Long) -> Unit, onNewProgram: () -> Unit) {
             ) {
                 if (tab == 0) {
                     items(plans, key = { it.plan.id }) { p ->
-                        PlanCard(p, onStart = { launch(p.plan.name, p.toWorkoutSteps(), null) }, onEdit = { onEditPlan(p.plan.id) }, onSchedule = { scheduling = p }, onDelete = { vm.deletePlan(p.plan.id) })
+                        PlanCard(p, onFavorite = { vm.toggleFavorite(p) }, onStart = { launch(p.plan.name, p.toWorkoutSteps(), null) }, onEdit = { onEditPlan(p.plan.id) }, onSchedule = { scheduling = p }, onDelete = { vm.deletePlan(p.plan.id) })
                     }
                 } else if (tab == 2) {
                     if (programs.isEmpty()) {
@@ -96,20 +105,25 @@ fun PlannerScreen(onEditPlan: (Long) -> Unit, onNewProgram: () -> Unit) {
                             )
                         }
                     }
-                    items(programs, key = { it.program.id }) { p -> ProgramCard(p, onDelete = { deleting = p }) }
+                    items(programs, key = { it.program.id }) { p ->
+                        ProgramCard(p, onEdit = { onEditProgram(p.program.id) }, onDelete = { deleting = p })
+                    }
                 } else {
-                    if (upcoming.isEmpty()) item { Text("Rien de programmé. Utilisez l'icône calendrier d'un plan. Touchez une séance pour la lancer.") }
+                    if (upcoming.isEmpty()) item { Text("Rien de programmé. Utilisez l'icône calendrier d'un plan. Touchez une séance pour la modifier, ▶ pour la lancer.") }
                     upcoming.groupBy { it.schedule.epochDay }.forEach { (day, list) ->
                         item(key = "d$day") { Text(formatDay(day), style = MaterialTheme.typography.titleSmall) }
                         items(list, key = { it.schedule.id }) { s ->
                             Card(
-                                onClick = { launch(s.plan.plan.name, s.plan.toWorkoutSteps(), s.schedule.id) },
+                                onClick = { onEditSession(s.plan.plan.id, s.schedule.id) },
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
                                 Row(Modifier.padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
                                         Text(s.plan.plan.name, style = MaterialTheme.typography.titleMedium)
                                         Text(formatClock(s.plan.totalSec) + if (s.schedule.completed) " · ✓ faite" else "")
+                                    }
+                                    FilledIconButton({ launch(s.plan.plan.name, s.plan.toWorkoutSteps(), s.schedule.id) }) {
+                                        Icon(Icons.Default.PlayArrow, "Lancer la séance")
                                     }
                                     IconButton({ vm.unschedule(s.schedule) }) { Icon(Icons.Default.Delete, "Retirer du calendrier") }
                                 }
@@ -140,7 +154,7 @@ fun PlannerScreen(onEditPlan: (Long) -> Unit, onNewProgram: () -> Unit) {
 }
 
 @Composable
-private fun ProgramCard(p: ProgramSummary, onDelete: () -> Unit) {
+private fun ProgramCard(p: ProgramSummary, onEdit: () -> Unit, onDelete: () -> Unit) {
     val fmt = java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.MEDIUM)
     val start = LocalDate.ofEpochDay(p.program.startEpochDay)
     val end = start.plusDays(p.program.totalDays.toLong() - 1)
@@ -151,6 +165,7 @@ private fun ProgramCard(p: ProgramSummary, onDelete: () -> Unit) {
                     Text(p.program.name, style = MaterialTheme.typography.titleMedium)
                     Text("Du ${start.format(fmt)} au ${end.format(fmt)}", style = MaterialTheme.typography.bodySmall)
                 }
+                IconButton(onEdit) { Icon(Icons.Default.Edit, "Modifier le programme") }
                 IconButton(onDelete) { Icon(Icons.Default.Delete, "Supprimer") }
             }
             androidx.compose.material3.LinearProgressIndicator(
@@ -167,10 +182,19 @@ private fun ProgramCard(p: ProgramSummary, onDelete: () -> Unit) {
 }
 
 @Composable
-private fun PlanCard(p: PlanWithSteps, onStart: () -> Unit, onEdit: () -> Unit, onSchedule: () -> Unit, onDelete: () -> Unit) {
+private fun PlanCard(p: PlanWithSteps, onFavorite: () -> Unit, onStart: () -> Unit, onEdit: () -> Unit, onSchedule: () -> Unit, onDelete: () -> Unit) {
     Card(onClick = onStart, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(p.plan.name, style = MaterialTheme.typography.titleMedium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(p.plan.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                IconButton(onFavorite) {
+                    Icon(
+                        if (p.plan.favorite) Icons.Default.Star else Icons.Default.StarBorder,
+                        if (p.plan.favorite) "Retirer des favoris" else "Ajouter aux favoris",
+                        tint = if (p.plan.favorite) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             if (p.plan.description.isNotBlank()) Text(p.plan.description, style = MaterialTheme.typography.bodySmall)
             Text("${formatClock(p.totalSec)} · ${"%.1f".format(p.distanceKm)} km · ${p.steps.size} paliers", style = MaterialTheme.typography.bodySmall)
             ProfileChart(p.toWorkoutSteps(), MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)

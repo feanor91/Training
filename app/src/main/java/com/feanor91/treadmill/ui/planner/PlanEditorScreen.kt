@@ -44,8 +44,9 @@ import com.feanor91.treadmill.ui.formatIncline
 import com.feanor91.treadmill.ui.formatSpeed
 
 @Composable
-fun PlanEditorScreen(planId: Long, onClose: () -> Unit) {
-    val vm = containerViewModel(key = "plan$planId") { PlanEditorViewModel(it, planId) }
+fun PlanEditorScreen(planId: Long, scheduleId: Long = -1, onClose: () -> Unit) {
+    val vm = containerViewModel(key = "plan$planId-$scheduleId") { PlanEditorViewModel(it, planId, scheduleId) }
+    var pickDate by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val draft by vm.draft.collectAsState()
     val limits by vm.limits.collectAsState()
     val saved by vm.saved.collectAsState()
@@ -75,6 +76,23 @@ fun PlanEditorScreen(planId: Long, onClose: () -> Unit) {
             }
             item {
                 OutlinedTextField(draft.description, vm::setDescription, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
+            }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Favori (affiché en premier)", Modifier.weight(1f))
+                    androidx.compose.material3.Switch(draft.favorite, vm::setFavorite)
+                }
+            }
+            draft.scheduleDay?.let { day ->
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Date de la séance", style = MaterialTheme.typography.titleSmall)
+                            Text(day.format(java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.FULL)))
+                        }
+                        OutlinedButton({ pickDate = true }) { Text("Déplacer") }
+                    }
+                }
             }
             item {
                 val steps = draft.steps.map { WorkoutStep(it.durationSec, it.speedKmh, it.inclinePct, it.label) }
@@ -155,6 +173,25 @@ fun PlanEditorScreen(planId: Long, onClose: () -> Unit) {
             }
             item { OutlinedButton(vm::addStep, Modifier.fillMaxWidth()) { Text("Ajouter un palier") } }
         }
+    }
+
+    if (pickDate) {
+        val day = draft.scheduleDay ?: java.time.LocalDate.now()
+        val state = androidx.compose.material3.rememberDatePickerState(
+            initialSelectedDateMillis = day.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli(),
+        )
+        androidx.compose.material3.DatePickerDialog(
+            onDismissRequest = { pickDate = false },
+            confirmButton = {
+                TextButton({
+                    state.selectedDateMillis?.let { ms ->
+                        vm.setScheduleDay(java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneOffset.UTC).toLocalDate())
+                    }
+                    pickDate = false
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton({ pickDate = false }) { Text("Annuler") } },
+        ) { androidx.compose.material3.DatePicker(state) }
     }
 }
 
