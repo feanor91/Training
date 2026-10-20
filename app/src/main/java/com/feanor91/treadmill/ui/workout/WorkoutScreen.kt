@@ -109,6 +109,23 @@ fun WorkoutScreen() {
                     modifier = Modifier.fillMaxWidth(), color = WorkoutColors.Speed, trackColor = Color(0xFF2A2A2A),
                 )
             }
+            // Compte à rebours du palier en cours : passe en orange dans les 5 dernières secondes.
+            ui.currentStep?.takeIf { it.durationSec > 0 }?.let { st ->
+                val ending = ui.stepRemainingSec <= 5
+                val stepColor = if (ending) WorkoutColors.Incline else Color.White
+                Spacer(Modifier.height(10.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        "PALIER ${ui.stepIndex + 1}/${ui.steps.size}",
+                        color = WorkoutColors.Dim, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                    )
+                    Text(formatClock(ui.stepRemainingSec), color = stepColor, fontSize = 36.sp, fontWeight = FontWeight.Bold)
+                }
+                LinearProgressIndicator(
+                    progress = { 1f - ui.stepRemainingSec.toFloat() / st.durationSec },
+                    modifier = Modifier.fillMaxWidth(), color = stepColor, trackColor = Color(0xFF2A2A2A),
+                )
+            }
         }
 
         // Cœur : vitesse (adjustable), pente (adjustable), cardio
@@ -138,7 +155,12 @@ fun WorkoutScreen() {
         // Profil + commandes
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             if (ui.steps.size > 1) {
-                ProfileChart(ui.steps, WorkoutColors.Speed, WorkoutColors.Incline, height = 48.dp, highlight = ui.stepIndex)
+                val st = ui.currentStep
+                val fraction = if (st != null && st.durationSec > 0) 1f - ui.stepRemainingSec.toFloat() / st.durationSec else 0f
+                ProfileChart(
+                    ui.steps, WorkoutColors.Speed, WorkoutColors.Incline, height = 64.dp,
+                    activeStep = ui.stepIndex, activeFraction = fraction,
+                )
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 FilledTonalIconButton({ confirmStop = true }, Modifier.size(64.dp)) { Icon(Icons.Default.Stop, "Arrêter") }
