@@ -38,7 +38,7 @@ class AppContainer(private val app: Application) {
     val profileStore = ProfileStore(app)
     val health = HealthConnectGateway(app)
 
-    val wear = WearBridge(app, scope)
+    val wear = WearBridge(app, scope, autoOpenWatch = { profileStore.autoOpenWatch.value })
 
     /** Résultat de l'export Health Connect de la dernière séance (affiché dans le bilan de fin). */
     val exportStatus = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)

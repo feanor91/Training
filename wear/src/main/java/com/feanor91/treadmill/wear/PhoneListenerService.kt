@@ -36,7 +36,7 @@ class PhoneListenerService : WearableListenerService() {
         nm.notify(
             2,
             NotificationCompat.Builder(this, "ask")
-                .setSmallIcon(R.drawable.ic_launcher)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle("Séance lancée sur le téléphone")
                 .setContentText("Touchez pour mesurer le cardio")
                 .setAutoCancel(true)

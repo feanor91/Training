@@ -49,4 +49,7 @@ object WatchState {
     val measuring = MutableStateFlow(false)
     val phone = MutableStateFlow(PhoneState())
     val error = MutableStateFlow<String?>(null)
+
+    /** Incrémenté à chaque ouverture demandée par le téléphone (début de séance). */
+    val openRequests = MutableStateFlow(0)
 }

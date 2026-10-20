@@ -33,6 +33,15 @@ class ProfileStore(context: Context) {
         prefs.edit().putBoolean("useHealthConnect", value).apply()
     }
 
+    private val _autoOpenWatch = MutableStateFlow(prefs.getBoolean("autoOpenWatch", true))
+    /** Ouvrir automatiquement l'appli de la montre au début de chaque séance. */
+    val autoOpenWatch: StateFlow<Boolean> = _autoOpenWatch.asStateFlow()
+
+    fun setAutoOpenWatch(value: Boolean) {
+        _autoOpenWatch.value = value
+        prefs.edit().putBoolean("autoOpenWatch", value).apply()
+    }
+
     fun update(transform: (UserProfile) -> UserProfile) {
         val p = transform(_profile.value).let {
             it.copy(weightKg = it.weightKg.coerceIn(30.0, 300.0), heightCm = it.heightCm.coerceIn(120.0, 230.0), age = it.age.coerceIn(10, 110), maxHrOverride = it.maxHrOverride?.coerceIn(100, 230),

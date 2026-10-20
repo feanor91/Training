@@ -1,6 +1,7 @@
 package com.feanor91.treadmill.wear
 
 import android.Manifest
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
@@ -35,6 +36,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent { MaterialTheme { WatchScreen() } }
+        noteOpenRequest(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        noteOpenRequest(intent)
+    }
+
+    private fun noteOpenRequest(intent: Intent?) {
+        if (intent?.data?.scheme == "treadmill") WatchState.openRequests.value += 1
     }
 }
 
@@ -54,6 +66,12 @@ private fun WatchScreen() {
     }.toTypedArray()
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
         if (granted[Manifest.permission.BODY_SENSORS] == true) HeartRateService.start(context)
+    }
+
+    // Ouverture automatique par le téléphone : on démarre la mesure tout de suite.
+    val openRequests by WatchState.openRequests.collectAsState()
+    LaunchedEffect(openRequests) {
+        if (openRequests > 0 && !measuring) launcher.launch(permissions)
     }
 
     // Séance lancée depuis le téléphone : on démarre la mesure dès l'ouverture de l'appli.

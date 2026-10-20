@@ -1,6 +1,8 @@
 package com.feanor91.treadmill.wear
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import com.feanor91.treadmill.domain.WorkoutEngine
 import com.feanor91.treadmill.domain.WorkoutState
@@ -15,13 +17,20 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import androidx.wear.remote.interactions.RemoteActivityHelper
 import org.json.JSONObject
+import java.util.concurrent.Executors
 
 /**
  * Pont avec la montre (Wear OS) : reçoit le rythme cardiaque mesuré au poignet et
  * envoie l'état de la séance pour l'afficher sur la montre.
  */
-class WearBridge(context: Context, private val scope: CoroutineScope) {
+class WearBridge(
+    context: Context,
+    private val scope: CoroutineScope,
+    /** Faut-il ouvrir l'appli sur la montre au début d'une séance ? */
+    private val autoOpenWatch: () -> Boolean = { true },
+) {
     private val app = context.applicationContext
     private val messages by lazy { Wearable.getMessageClient(app) }
     private val nodes by lazy { Wearable.getNodeClient(app) }
@@ -73,6 +82,7 @@ class WearBridge(context: Context, private val scope: CoroutineScope) {
                 when {
                     running && lastState != WorkoutState.Running && lastState != WorkoutState.Paused -> {
                         send(WearProtocol.PATH_WORKOUT_START, ByteArray(0))
+                        if (autoOpenWatch()) openWatchApp()
                     }
                     !running && (lastState == WorkoutState.Running || lastState == WorkoutState.Paused) -> {
                         send(WearProtocol.PATH_WORKOUT_STOP, ByteArray(0))
@@ -94,6 +104,21 @@ class WearBridge(context: Context, private val scope: CoroutineScope) {
                 }
             }
         }
+    }
+
+    /**
+     * Ouvre l'appli « Tapis Cardio » sur la montre (Wear OS 3+) : la montre l'ouvre via un lien
+     * treadmill://workout, ce qui démarre aussitôt la mesure du cardio.
+     */
+    private suspend fun openWatchApp() {
+        runCatching {
+            val helper = RemoteActivityHelper(app, Executors.newSingleThreadExecutor())
+            val intent = Intent(Intent.ACTION_VIEW)
+                .addCategory(Intent.CATEGORY_BROWSABLE)
+                .setData(Uri.parse("treadmill://workout"))
+                .setPackage(app.packageName)
+            nodes.connectedNodes.await().forEach { helper.startRemoteActivity(intent, it.id) }
+        }.onFailure { Log.d(TAG, "Ouverture de l'appli montre impossible : ${it.message}") }
     }
 
     private suspend fun refreshNodes() {

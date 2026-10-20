@@ -72,6 +72,8 @@ class SettingsViewModel(private val c: AppContainer) : ViewModel() {
     val watchConnected = c.wear.watchConnected
     val watchName = c.wear.watchName
     val watchHr = c.wear.watchHr
+    val autoOpenWatch = c.profileStore.autoOpenWatch
+    fun setAutoOpenWatch(v: Boolean) = c.profileStore.setAutoOpenWatch(v)
 
     val devices = MutableStateFlow<List<BleDevice>>(emptyList())
     val scanTarget = MutableStateFlow<ScanTarget?>(null)
@@ -130,6 +132,7 @@ fun SettingsScreen(onOpenHealth: () -> Unit) {
     val watchConnected by vm.watchConnected.collectAsState()
     val watchName by vm.watchName.collectAsState()
     val watchHr by vm.watchHr.collectAsState()
+    val autoOpen by vm.autoOpenWatch.collectAsState()
     val devices by vm.devices.collectAsState()
     val scanTarget by vm.scanTarget.collectAsState()
     val scanError by vm.scanError.collectAsState()
@@ -175,10 +178,10 @@ fun SettingsScreen(onOpenHealth: () -> Unit) {
                 )
             }
             item { SectionTitle("Montre") }
-            item { WatchCard(watchConnected, watchName, watchHr) }
+            item { WatchCard(watchConnected, watchName, watchHr, autoOpen, vm::setAutoOpenWatch) }
             item { SectionTitle("Santé") }
             item {
-                Card(Modifier.fillMaxWidth(), onClick = onOpenHealth) {
+                Card(onClick = onOpenHealth, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Profil, zones cardio et Health Connect", style = MaterialTheme.typography.titleSmall)
                         Text(
@@ -274,9 +277,10 @@ private fun StrapCard(name: String?, hr: Int?, onScan: () -> Unit, onDisconnect:
 }
 
 @Composable
-private fun WatchCard(connected: Boolean, name: String?, hr: Int?) {
+private fun WatchCard(connected: Boolean, name: String?, hr: Int?, autoOpen: Boolean, onAutoOpen: (Boolean) -> Unit) {
     Card(Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.Watch, null)
             Spacer(Modifier.width(8.dp))
             Column {
@@ -290,6 +294,11 @@ private fun WatchCard(connected: Boolean, name: String?, hr: Int?) {
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Ouvrir l'appli de la montre au début d'une séance", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            androidx.compose.material3.Switch(autoOpen, onAutoOpen)
+        }
         }
     }
 }
