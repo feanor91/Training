@@ -11,4 +11,7 @@ object WearProtocol {
 
     /** Montre -> téléphone : fréquence cardiaque, texte décimal en UTF-8. */
     const val PATH_HEART_RATE = "/hr"
+
+    /** Montre -> téléphone : ajustement de la vitesse, delta en km/h (texte décimal, ex. « 0.5 » ou « -0.5 »). */
+    const val PATH_SPEED_DELTA = "/speed"
 }

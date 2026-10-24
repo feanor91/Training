@@ -111,13 +111,7 @@ class HeartRateService : Service() {
         super.onDestroy()
     }
 
-    private suspend fun sendHeartRate(bpm: Int) {
-        runCatching {
-            val nodes = Wearable.getNodeClient(this).connectedNodes.await()
-            val client = Wearable.getMessageClient(this)
-            nodes.forEach { client.sendMessage(it.id, Protocol.PATH_HEART_RATE, bpm.toString().toByteArray()).await() }
-        }
-    }
+    private suspend fun sendHeartRate(bpm: Int) = sendToPhone(this, Protocol.PATH_HEART_RATE, bpm.toString())
 
     private fun hasSensorPermission() =
         checkSelfPermission(Manifest.permission.BODY_SENSORS) == PackageManager.PERMISSION_GRANTED
@@ -146,6 +140,15 @@ class HeartRateService : Service() {
     }
 
     companion object {
+        /** Envoie un message texte à tous les appareils connectés (le téléphone). */
+        suspend fun sendToPhone(context: Context, path: String, text: String) {
+            runCatching {
+                val nodes = Wearable.getNodeClient(context).connectedNodes.await()
+                val client = Wearable.getMessageClient(context)
+                nodes.forEach { client.sendMessage(it.id, path, text.toByteArray()).await() }
+            }
+        }
+
         private const val TAG = "HeartRateService"
         private const val CHANNEL = "hr"
         private const val NOTIF_ID = 1

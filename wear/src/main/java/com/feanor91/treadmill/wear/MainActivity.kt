@@ -22,7 +22,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -70,6 +72,11 @@ private fun WatchScreen(onKeepScreenOn: (Boolean) -> Unit) {
     val phone by WatchState.phone.collectAsState()
     val error by WatchState.error.collectAsState()
 
+    val scope = rememberCoroutineScope()
+    val canAdjust = phone.running && phone.countdown == 0
+    val adjust: (Double) -> Unit = { delta ->
+        scope.launch { HeartRateService.sendToPhone(context, Protocol.PATH_SPEED_DELTA, delta.toString()) }
+    }
     var keepOn by remember { mutableStateOf(WatchSettings.keepScreenOn(context)) }
 
     val permissions = buildList {
@@ -96,13 +103,14 @@ private fun WatchScreen(onKeepScreenOn: (Boolean) -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
+        if (canAdjust) SpeedChip("+ 0,5 km/h") { adjust(0.5) }
         if (phone.countdown > 0) {
             Text("Départ dans", fontSize = 14.sp, color = Color.Gray)
             Text("${phone.countdown}", fontSize = 56.sp, fontWeight = FontWeight.Bold, color = Color(0xFF5FD3B5))
         } else {
             Text(
                 "♥ ${hr ?: "--"}",
-                fontSize = 40.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF6B6B),
+                fontSize = if (canAdjust) 32.sp else 40.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF6B6B),
             )
             if (phone.running) {
                 Text(
@@ -122,6 +130,7 @@ private fun WatchScreen(onKeepScreenOn: (Boolean) -> Unit) {
                 )
             }
         }
+        if (canAdjust) SpeedChip("− 0,5 km/h") { adjust(-0.5) }
         error?.let { Text(it, fontSize = 11.sp, color = Color(0xFFFFA94D), textAlign = TextAlign.Center) }
         Spacer(Modifier.height(6.dp))
         // Mesure manuelle (test du capteur) : inutile pendant une séance lancée depuis le téléphone.
@@ -155,4 +164,14 @@ private fun WatchScreen(onKeepScreenOn: (Boolean) -> Unit) {
             )
         }
     }
+}
+
+@Composable
+private fun SpeedChip(text: String, onClick: () -> Unit) {
+    Chip(
+        onClick = onClick,
+        label = { Text(text, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, maxLines = 1, fontSize = 13.sp) },
+        colors = ChipDefaults.secondaryChipColors(),
+        modifier = Modifier.fillMaxWidth(0.6f).height(30.dp),
+    )
 }

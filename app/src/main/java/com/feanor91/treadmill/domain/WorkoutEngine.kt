@@ -85,6 +85,13 @@ class WorkoutEngine(
     private var stepTick = 0
     private var pushTick = 0
     private var pushRetries = 0
+    /** La vitesse / la pente mesurées ont rejoint la consigne depuis le dernier envoi : tout écart ultérieur vient du tapis. */
+    private var speedReached = false
+    private var inclineReached = false
+    private var lastMeasuredSpeed: Double? = null
+    private var lastMeasuredIncline: Double? = null
+    private var speedSteady = 0
+    private var inclineSteady = 0
     private val samples = ArrayList<Sample>()
 
     val running get() = _ui.value.state == WorkoutState.Running || _ui.value.state == WorkoutState.Paused
@@ -221,7 +228,7 @@ class WorkoutEngine(
         if (hr != null) zoneSeconds[zone]++
         stepTick++
         if (step.targetZone != null && hr != null) controlSpeed(step, u, hr, maxHr)
-        if (!simulated && u.countdownSec == 0) enforceTargets(m.speedKmh)
+        if (!simulated && u.countdownSec == 0) enforceTargets(m.speedKmh, m.inclinePct)
         val remaining = if (step.durationSec == 0) 0 else u.stepRemainingSec - 1
         _ui.update {
             it.copy(
@@ -268,21 +275,61 @@ class WorkoutEngine(
     private fun targetsPushed() {
         pushTick = 0
         pushRetries = 0
+        speedReached = false
+        inclineReached = false
+        speedSteady = 0
+        inclineSteady = 0
     }
 
     /**
      * Le tapis ignore parfois une consigne (par exemple pendant son compte à rebours de départ) sans signaler
-     * d'erreur : si la vitesse mesurée reste éloignée de la consigne, on la renvoie (6 s d'intervalle, 6 fois au plus).
+     * d'erreur : tant que la vitesse mesurée n'a pas rejoint la consigne, on la renvoie (6 s d'intervalle, 6 fois au plus).
+     * Une fois la consigne atteinte, tout écart vient d'une action sur les commandes du tapis : on le respecte
+     * et la valeur mesurée devient la nouvelle consigne (jusqu'au palier suivant), sans rien renvoyer.
      */
-    private fun enforceTargets(measuredKmh: Double?) {
+    private fun enforceTargets(measuredKmh: Double?, measuredIncline: Double?) {
         pushTick++
+        adoptManualChanges(measuredKmh, measuredIncline)
         val measured = measuredKmh ?: return
         val u = _ui.value
         if (kotlin.math.abs(measured - u.targetSpeed) <= 0.35) return
-        if (pushTick >= 6 && pushRetries < 6) {
+        if (!speedReached && pushTick >= 6 && pushRetries < 6) {
             pushRetries++
             pushTick = 0
             scope.launch { push(u.targetSpeed, u.targetIncline) }
+        }
+    }
+
+    private fun adoptManualChanges(speed: Double?, incline: Double?) {
+        val u = _ui.value
+        if (speed != null) {
+            if (kotlin.math.abs(speed - u.targetSpeed) <= 0.35) {
+                speedReached = true
+                speedSteady = 0
+            } else if (speedReached) {
+                // On attend que la valeur se stabilise (le tapis monte ou descend progressivement).
+                speedSteady = if (lastMeasuredSpeed?.let { kotlin.math.abs(speed - it) < 0.05 } == true) speedSteady + 1 else 0
+                if (speedSteady >= 2) {
+                    val v = ftms.limits.value.clampSpeed(Math.round(speed * 10) / 10.0)
+                    _ui.update { it.copy(targetSpeed = v) }
+                    speedSteady = 0
+                }
+            }
+            lastMeasuredSpeed = speed
+        }
+        if (incline != null) {
+            if (kotlin.math.abs(incline - u.targetIncline) <= 0.3) {
+                inclineReached = true
+                inclineSteady = 0
+            } else if (inclineReached) {
+                inclineSteady = if (lastMeasuredIncline?.let { kotlin.math.abs(incline - it) < 0.05 } == true) inclineSteady + 1 else 0
+                if (inclineSteady >= 2) {
+                    val v = ftms.limits.value.clampIncline(Math.round(incline * 10) / 10.0)
+                    _ui.update { it.copy(targetIncline = v) }
+                    inclineSteady = 0
+                }
+            }
+            lastMeasuredIncline = incline
         }
     }
 

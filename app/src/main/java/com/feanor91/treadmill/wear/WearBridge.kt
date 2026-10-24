@@ -47,10 +47,13 @@ class WearBridge(
 
     private var expiry: Job? = null
     private var lastState: WorkoutState = WorkoutState.Idle
+    private var engine: WorkoutEngine? = null
 
     private val listener = MessageClient.OnMessageReceivedListener { event: MessageEvent ->
         if (event.path == WearProtocol.PATH_HEART_RATE) {
             String(event.data, Charsets.UTF_8).toIntOrNull()?.takeIf { it in 30..250 }?.let(::onHeartRate)
+        } else if (event.path == WearProtocol.PATH_SPEED_DELTA) {
+            String(event.data, Charsets.UTF_8).toDoubleOrNull()?.takeIf { it in -2.0..2.0 }?.let { engine?.adjustSpeed(it) }
         }
     }
 
@@ -65,6 +68,7 @@ class WearBridge(
 
     /** À appeler une fois le moteur créé. */
     fun attach(engine: WorkoutEngine) {
+        this.engine = engine
         runCatching { messages.addListener(listener) }.onFailure { Log.w(TAG, "Wearable indisponible", it) }
 
         // Présence de la montre (appairage Wear OS).
