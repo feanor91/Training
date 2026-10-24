@@ -78,10 +78,15 @@ fun HistoryScreen() {
         ) {
             item {
                 Card(Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Total("Séances", sessions.size.toString())
-                        Total("Distance", "${formatKm(sessions.sumOf { it.distanceM })} km")
-                        Total("Temps", formatClock(sessions.sumOf { it.durationSec }))
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Row(Modifier.fillMaxWidth()) {
+                            Total("Séances", sessions.size.toString(), Modifier.weight(1f))
+                            Total("Distance", "${formatKm(sessions.sumOf { it.distanceM })} km", Modifier.weight(1f))
+                        }
+                        Row(Modifier.fillMaxWidth()) {
+                            Total("Temps", formatClock(sessions.sumOf { it.durationSec }), Modifier.weight(1f))
+                            Total("Calories actives", "${sessions.sumOf { it.activeKcal }} kcal", Modifier.weight(1f))
+                        }
                     }
                 }
             }
@@ -110,8 +115,8 @@ fun HistoryScreen() {
 }
 
 @Composable
-private fun Total(label: String, value: String) {
-    Column {
+private fun Total(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier) {
         Text(value, style = MaterialTheme.typography.titleLarge)
         Text(label, style = MaterialTheme.typography.bodySmall)
     }
