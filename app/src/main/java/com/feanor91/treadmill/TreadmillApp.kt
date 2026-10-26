@@ -140,7 +140,7 @@ class AppContainer(private val app: Application) {
 
     private companion object {
         /** À incrémenter quand de nouveaux plans par défaut sont ajoutés. */
-        const val SEED_VERSION = 3
+        const val SEED_VERSION = 4
     }
 }
 

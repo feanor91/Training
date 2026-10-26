@@ -95,26 +95,31 @@ class TrainingRepository(private val db: AppDatabase) {
 
     suspend fun markExported(id: Long) = dao.markExported(id)
 
-    /** Insère les plans par défaut absents (par nom) ; sans effet sur ceux déjà présents. */
+    /**
+     * Insère les plans par défaut absents (par nom). Les plans par défaut déjà présents dont une vitesse sort
+     * de la plage [SEED_MIN_KMH]–[SEED_MAX_KMH] sont remplacés par la version actuelle ; les autres ne sont pas touchés.
+     */
     suspend fun seedDefaults() {
+        /** Toutes les séances incluses restent entre 3 et 5 km/h. */
+        fun cap(v: Double) = v.coerceIn(SEED_MIN_KMH, SEED_MAX_KMH)
         fun step(min: Double, speed: Double, incl: Double, label: String) =
-            StepEntity(planId = 0, position = 0, durationSec = (min * 60).toInt(), speedKmh = speed, inclinePct = incl, label = label)
+            StepEntity(planId = 0, position = 0, durationSec = (min * 60).toInt(), speedKmh = cap(speed), inclinePct = incl, label = label)
 
         /** Palier piloté par le cardio : la vitesse évolue entre [lo] et [hi] pour rester dans la zone [zone]. */
         fun zoned(min: Double, start: Double, lo: Double, hi: Double, zone: Int, incl: Double, label: String) =
-            step(min, start, incl, label).copy(targetZone = zone, minSpeedKmh = lo, maxSpeedKmh = hi)
+            step(min, start, incl, label).copy(targetZone = zone, minSpeedKmh = cap(lo), maxSpeedKmh = cap(hi))
 
         val defaults = listOf(
             Triple("Marche active 30 min", "Échauffement, rythme soutenu, retour au calme",
-                listOf(step(5.0, 4.5, 1.0, "Échauffement"), step(20.0, 6.0, 2.0, "Allure"), step(5.0, 4.0, 0.0, "Retour au calme"))),
+                listOf(step(5.0, 3.0, 1.0, "Échauffement"), step(20.0, 5.0, 2.0, "Allure"), step(5.0, 3.0, 0.0, "Retour au calme"))),
             Triple("Fractionné 8 x 1'/1'", "8 répétitions rapide / récupération",
-                listOf(step(8.0, 7.0, 1.0, "Échauffement")) +
-                    (1..8).flatMap { listOf(step(1.0, 12.0, 1.0, "Rapide $it"), step(1.0, 7.0, 1.0, "Récup $it")) } +
-                    step(5.0, 5.0, 0.0, "Retour au calme")),
+                listOf(step(8.0, 3.0, 1.0, "Échauffement")) +
+                    (1..8).flatMap { listOf(step(1.0, 5.0, 1.0, "Rapide $it"), step(1.0, 3.0, 1.0, "Récup $it")) } +
+                    step(5.0, 3.0, 0.0, "Retour au calme")),
             Triple("Côtes 40 min", "Montées progressives",
-                listOf(step(5.0, 5.0, 1.0, "Échauffement")) +
-                    listOf(3.0, 5.0, 7.0, 9.0, 7.0, 5.0, 3.0).map { step(4.0, 6.5, it, "Pente ${it.toInt()} %") } +
-                    step(7.0, 4.5, 0.0, "Retour au calme")),
+                listOf(step(5.0, 3.0, 1.0, "Échauffement")) +
+                    listOf(3.0, 5.0, 7.0, 9.0, 7.0, 5.0, 3.0).map { step(4.0, 4.0, it, "Pente ${it.toInt()} %") } +
+                    step(7.0, 3.0, 0.0, "Retour au calme")),
 
             // Plans doux : échauffement / récupération 2–3 km/h, effort 4–5 km/h maximum.
             Triple("Reprise douce 15 min", "Pour (re)démarrer en douceur",
@@ -148,9 +153,22 @@ class TrainingRepository(private val db: AppDatabase) {
                     (1..4).flatMap { listOf(zoned(3.0, 4.2, 3.5, 5.0, 3, 0.0, "Effort $it"), zoned(2.0, 2.8, 2.0, 3.0, 1, 0.0, "Récup $it")) } +
                     step(5.0, 2.0, 0.0, "Retour au calme")),
         )
+        val existing = dao.plansOnce().filter { it.plan.programId == null }.associateBy { it.plan.name }
         for ((name, desc, steps) in defaults + zoneDefaults) {
-            if (dao.planNameCount(name) == 0) savePlan(PlanEntity(name = name, description = desc), steps)
+            val current = existing[name]
+            when {
+                current == null -> if (dao.planNameCount(name) == 0) savePlan(PlanEntity(name = name, description = desc), steps)
+                current.steps.any { outOfRange(it.speedKmh) || it.minSpeedKmh?.let { v -> outOfRange(v) } == true || it.maxSpeedKmh?.let { v -> outOfRange(v) } == true } ->
+                    savePlan(current.plan.copy(description = desc), steps)
+            }
         }
+    }
+
+    private fun outOfRange(v: Double) = v < SEED_MIN_KMH - 1e-6 || v > SEED_MAX_KMH + 1e-6
+
+    private companion object {
+        const val SEED_MIN_KMH = 3.0
+        const val SEED_MAX_KMH = 5.0
     }
 }
 
