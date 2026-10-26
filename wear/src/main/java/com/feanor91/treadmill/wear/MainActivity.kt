@@ -41,7 +41,6 @@ import androidx.wear.compose.material.Text
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        applyKeepScreenOn(WatchSettings.keepScreenOn(this))
         setContent { MaterialTheme { WatchScreen(onKeepScreenOn = ::applyKeepScreenOn) } }
         noteOpenRequest(intent)
     }
@@ -78,6 +77,9 @@ private fun WatchScreen(onKeepScreenOn: (Boolean) -> Unit) {
         scope.launch { HeartRateService.sendToPhone(context, Protocol.PATH_SPEED_DELTA, delta.toString()) }
     }
     var keepOn by remember { mutableStateOf(WatchSettings.keepScreenOn(context)) }
+    // L'écran ne reste allumé que pendant une séance (le cardio n'est pas transmis écran éteint).
+    val sessionActive = phone.running || measuring
+    LaunchedEffect(keepOn, sessionActive) { onKeepScreenOn(keepOn && sessionActive) }
 
     val permissions = buildList {
         add(Manifest.permission.BODY_SENSORS)
@@ -155,7 +157,7 @@ private fun WatchScreen(onKeepScreenOn: (Boolean) -> Unit) {
                 },
                 label = {
                     Text(
-                        if (keepOn) "Écran : toujours allumé" else "Écran : s'éteint seul",
+                        if (keepOn) "Séance : écran allumé" else "Séance : écran libre",
                         modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, maxLines = 1, fontSize = 11.sp,
                     )
                 },

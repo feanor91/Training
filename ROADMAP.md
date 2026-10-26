@@ -32,3 +32,4 @@ Besoin : utiliser l'appli sur un appareil sans Health Connect (Android 7 à 8) s
 - Arrêter automatiquement la mesure quand le téléphone ne répond plus pendant quelques minutes.
 - Laisser l'écran de la montre s'éteindre en dehors des séances.
 - Constaté sur la montre (SM-R960) : avec l'option « s'éteint seul », le cardio n'arrive plus au téléphone écran éteint. L'écran reste donc « toujours allumé » par défaut. Pistes si on y revient : verrou de réveil partiel (WakeLock) dans HeartRateService, et `flushAsync()` de l'ExerciseClient pour forcer l'envoi des mesures mises en tampon.
+- Fait : l'écran de la montre n'est maintenu allumé que pendant une séance (ou une mesure manuelle) ; il s'éteint normalement le reste du temps, ce qui supprime la décharge rapide de la batterie constatée avec l'écran toujours allumé.
