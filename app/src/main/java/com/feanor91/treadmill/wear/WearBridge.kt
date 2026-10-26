@@ -52,6 +52,8 @@ class WearBridge(
     private val listener = MessageClient.OnMessageReceivedListener { event: MessageEvent ->
         if (event.path == WearProtocol.PATH_HEART_RATE) {
             String(event.data, Charsets.UTF_8).toIntOrNull()?.takeIf { it in 30..250 }?.let(::onHeartRate)
+        } else if (event.path == WearProtocol.PATH_EMERGENCY_STOP) {
+            engine?.emergencyStop()
         } else if (event.path == WearProtocol.PATH_SPEED_DELTA) {
             String(event.data, Charsets.UTF_8).toDoubleOrNull()?.takeIf { it in -2.0..2.0 }?.let { engine?.adjustSpeed(it) }
         }

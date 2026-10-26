@@ -3,6 +3,7 @@ package com.feanor91.treadmill.ui.workout
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -63,12 +65,15 @@ fun WorkoutScreen() {
     val container = appContainer()
     val exportStatus by container.exportStatus.collectAsState()
     var calibrated by remember { mutableStateOf(false) }
-    var confirmStop by remember { mutableStateOf(false) }
 
     KeepScreenOn()
-    BackHandler { confirmStop = true }
+    // Arrêt d'urgence : retour, ou toucher n'importe où hors des boutons (qui consomment leurs propres appuis).
+    BackHandler { engine.emergencyStop() }
 
-    Box(Modifier.fillMaxSize().background(WorkoutColors.Background)) {
+    Box(
+        Modifier.fillMaxSize().background(WorkoutColors.Background)
+            .pointerInput(Unit) { detectTapGestures { engine.emergencyStop() } },
+    ) {
     Column(
         Modifier.fillMaxSize().background(WorkoutColors.Background).statusBarsPadding().navigationBarsPadding().padding(20.dp),
         verticalArrangement = Arrangement.SpaceBetween,
@@ -162,8 +167,12 @@ fun WorkoutScreen() {
                     activeStep = ui.stepIndex, activeFraction = fraction,
                 )
             }
+            Text(
+                "Touchez l'écran (hors boutons) pour arrêter d'urgence",
+                color = WorkoutColors.Dim, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
+            )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                FilledTonalIconButton({ confirmStop = true }, Modifier.size(64.dp)) { Icon(Icons.Default.Stop, "Arrêter") }
+                FilledTonalIconButton({ engine.emergencyStop() }, Modifier.size(64.dp)) { Icon(Icons.Default.Stop, "Arrêter") }
                 FilledIconButton(
                     { if (ui.state == WorkoutState.Paused) engine.resume() else engine.pause() },
                     Modifier.size(88.dp),
@@ -191,18 +200,9 @@ fun WorkoutScreen() {
             Text(ui.countdownSec.toString(), color = WorkoutColors.Speed, fontSize = 180.sp, fontWeight = FontWeight.Bold)
             Text(ui.planName, color = Color.White, fontSize = 18.sp)
             Spacer(Modifier.height(32.dp))
-            TextButton({ engine.stop() }) { Text("Annuler", color = WorkoutColors.Dim) }
+            TextButton({ engine.emergencyStop() }) { Text("Annuler", color = WorkoutColors.Dim) }
         }
     }
-    }
-
-    if (confirmStop) {
-        AlertDialog(
-            onDismissRequest = { confirmStop = false },
-            title = { Text("Terminer la séance ?") },
-            confirmButton = { TextButton({ confirmStop = false; engine.stop() }) { Text("Terminer") } },
-            dismissButton = { TextButton({ confirmStop = false }) { Text("Continuer") } },
-        )
     }
 
     ui.summary?.takeIf { ui.state == WorkoutState.Finished }?.let { s ->

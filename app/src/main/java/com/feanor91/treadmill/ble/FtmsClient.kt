@@ -119,6 +119,18 @@ class FtmsClient(private val context: Context, private val scope: CoroutineScope
     suspend fun pause(): Boolean = command(FtmsParser.cmdPause())
     suspend fun stop(): Boolean = command(FtmsParser.cmdStop())
 
+    /**
+     * Arrêt d'urgence : on n'attend pas la réponse d'une commande en cours (qui bloquerait la file jusqu'à 3 s)
+     * et on envoie Stop plusieurs fois, au cas où une écriture serait perdue.
+     */
+    suspend fun emergencyStop() {
+        cpWaiter?.complete(CP_NO_RESPONSE)
+        repeat(3) {
+            send(FtmsParser.cmdStop())
+            delay(300)
+        }
+    }
+
     suspend fun setSpeed(kmh: Double): Boolean =
         command(FtmsParser.cmdSetSpeed(_limits.value.clampSpeed(kmh)))
 

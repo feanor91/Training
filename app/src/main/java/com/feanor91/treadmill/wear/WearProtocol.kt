@@ -14,4 +14,7 @@ object WearProtocol {
 
     /** Montre -> téléphone : ajustement de la vitesse, delta en km/h (texte décimal, ex. « 0.5 » ou « -0.5 »). */
     const val PATH_SPEED_DELTA = "/speed"
+
+    /** Montre -> téléphone : arrêt d'urgence de la séance. */
+    const val PATH_EMERGENCY_STOP = "/stop"
 }

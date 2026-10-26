@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -101,7 +103,14 @@ private fun WatchScreen(onKeepScreenOn: (Boolean) -> Unit) {
     }
 
     Column(
-        Modifier.fillMaxSize().padding(horizontal = 12.dp),
+        Modifier.fillMaxSize()
+            // Arrêt d'urgence : toucher n'importe où hors des boutons pendant une séance.
+            .pointerInput(phone.running) {
+                detectTapGestures {
+                    if (phone.running) scope.launch { HeartRateService.sendToPhone(context, Protocol.PATH_EMERGENCY_STOP, "1") }
+                }
+            }
+            .padding(horizontal = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {

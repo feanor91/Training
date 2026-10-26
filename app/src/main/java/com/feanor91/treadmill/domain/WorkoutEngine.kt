@@ -160,6 +160,21 @@ class WorkoutEngine(
         }
     }
 
+    /**
+     * Arrêt d'urgence (toucher l'écran, montre) : immédiat, sans confirmation, à n'importe quel moment
+     * de la séance, y compris pendant le compte à rebours de départ.
+     */
+    fun emergencyStop() {
+        if (!running) return
+        if (_ui.value.countdownSec > 0) {
+            job?.cancel()
+            _ui.value = WorkoutUi()
+            scope.launch { ftms.emergencyStop() }
+        } else {
+            finish(completed = false, emergency = true)
+        }
+    }
+
     fun skipStep() {
         val u = _ui.value
         if (!running || u.countdownSec > 0) return
@@ -340,7 +355,7 @@ class WorkoutEngine(
         return if (now >= base) now - base else now
     }
 
-    private fun finish(completed: Boolean) {
+    private fun finish(completed: Boolean, emergency: Boolean = false) {
         job?.cancel()
         val u = _ui.value
         val summary = SessionSummary(
@@ -353,7 +368,7 @@ class WorkoutEngine(
         )
         _ui.update { it.copy(state = WorkoutState.Finished, summary = summary, speedKmh = 0.0) }
         scope.launch {
-            ftms.stop()
+            if (emergency) ftms.emergencyStop() else ftms.stop()
             onFinished(summary)
         }
     }

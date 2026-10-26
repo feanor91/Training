@@ -10,6 +10,7 @@ object Protocol {
     const val PATH_STATE = "/state"
     const val PATH_HEART_RATE = "/hr"
     const val PATH_SPEED_DELTA = "/speed"
+    const val PATH_EMERGENCY_STOP = "/stop"
 }
 
 /** Dernier état de séance reçu du téléphone. */
