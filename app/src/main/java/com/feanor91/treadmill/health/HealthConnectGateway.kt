@@ -22,6 +22,7 @@ import androidx.health.connect.client.records.NutritionRecord
 import androidx.health.connect.client.records.SpeedRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.WeightRecord
+import androidx.health.connect.client.records.metadata.DataOrigin
 import androidx.health.connect.client.records.metadata.Device
 import androidx.health.connect.client.records.metadata.Metadata
 import androidx.health.connect.client.request.AggregateRequest
@@ -100,6 +101,9 @@ data class ExportableSession(
     val samples: List<com.feanor91.treadmill.domain.Sample> = emptyList(),
 )
 
+/** Résultat d'un export : [report] détaille ce qui a été écrit et ce que Health Connect en retient. */
+data class ExportResult(val sent: Boolean, val report: String = "")
+
 /**
  * Accès à Health Connect : export des séances, lecture des calories des autres applis.
  * Health Connect exige Android 9+ ; sur Android 7-8 tout est simplement indisponible.
@@ -156,9 +160,9 @@ class HealthConnectGateway(private val context: Context) {
 
     private suspend fun canWriteSteps() = HealthPermission.getWritePermission(StepsRecord::class) in granted()
 
-    /** Écrit séance, distance, calories actives, vitesse et rythme cardiaque. */
-    suspend fun export(s: ExportableSession): Boolean {
-        if (!canWrite()) return false
+    /** Écrit séance, distance, calories actives, pas, vitesse et rythme cardiaque. */
+    suspend fun export(s: ExportableSession): ExportResult {
+        if (!canWrite()) return ExportResult(false)
         val start = Instant.ofEpochMilli(s.startedAtMs)
         val end = start.plusSeconds(s.durationSec.coerceAtLeast(1).toLong())
         val offset = ZoneId.systemDefault().rules.getOffset(start)
@@ -178,7 +182,8 @@ class HealthConnectGateway(private val context: Context) {
         if (s.activeKcal > 0) {
             records += ActiveCaloriesBurnedRecord(start, offset, end, offset, Energy.kilocalories(s.activeKcal.toDouble()), meta())
         }
-        if (s.steps > 0 && canWriteSteps()) {
+        val stepsAllowed = canWriteSteps()
+        if (s.steps > 0 && stepsAllowed) {
             records += StepsRecord(start, offset, end, offset, s.steps.toLong(), meta())
         }
         val inRange = s.samples.map { it.copy(timeMs = it.timeMs.coerceIn(start.toEpochMilli(), end.toEpochMilli() - 1)) }
@@ -191,7 +196,37 @@ class HealthConnectGateway(private val context: Context) {
         if (speed.isNotEmpty()) records += SpeedRecord(start, offset, end, offset, speed, meta())
 
         client.insertRecords(records)
-        return true
+        return ExportResult(true, verify(s, start, end, stepsAllowed))
+    }
+
+    /**
+     * Relit ce que Health Connect contient pour la séance : ce que l'appli a écrit, et le total retenu toutes
+     * applications confondues (Health Connect n'additionne pas des sources qui se chevauchent : celle qui a la
+     * priorité l'emporte, souvent la montre).
+     */
+    private suspend fun verify(s: ExportableSession, start: Instant, end: Instant, stepsAllowed: Boolean): String {
+        val range = TimeRangeFilter.between(start, end)
+        val mine = setOf(DataOrigin(context.packageName))
+        val lines = mutableListOf<String>()
+
+        if (s.activeKcal > 0) {
+            runCatching {
+                val ours = client.readRecords(ReadRecordsRequest(ActiveCaloriesBurnedRecord::class, range, mine)).records
+                    .sumOf { it.energy.inKilocalories }
+                val kept = client.aggregate(AggregateRequest(setOf(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL), range))[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories
+                lines += "Calories : ${ours.toInt()} kcal écrites" + (kept?.let { " · retenues par Health Connect : ${it.toInt()} kcal" } ?: "")
+            }.onFailure { lines += "Calories : ${s.activeKcal} kcal envoyées (relecture non autorisée)" }
+        }
+        if (s.steps > 0) {
+            if (!stepsAllowed) {
+                lines += "Pas : NON envoyés, autorisez l'écriture des pas (onglet Santé > Autoriser la composition corporelle)."
+            } else runCatching {
+                val ours = client.readRecords(ReadRecordsRequest(StepsRecord::class, range, mine)).records.sumOf { it.count }
+                val kept = client.aggregate(AggregateRequest(setOf(StepsRecord.COUNT_TOTAL), range))[StepsRecord.COUNT_TOTAL]
+                lines += "Pas : $ours écrits" + (kept?.let { " · retenus par Health Connect : $it" } ?: "")
+            }.onFailure { lines += "Pas : ${s.steps} envoyés (relecture non autorisée)" }
+        }
+        return lines.joinToString("\n")
     }
 
     /** Bilan de la journée [date] ; pour aujourd'hui, le métabolisme de repos est proratisé à l'heure courante. */

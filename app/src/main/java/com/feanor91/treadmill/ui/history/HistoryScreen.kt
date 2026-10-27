@@ -49,10 +49,13 @@ class HistoryViewModel(private val c: AppContainer) : ViewModel() {
     /** Réessaie l'export d'une séance (agrégats seulement : pas de courbes cardio/vitesse). */
     fun export(s: SessionEntity) = viewModelScope.launch {
         message.value = runCatching {
-            val ok = c.health.export(
+            val result = c.health.export(
                 ExportableSession(s.planName, s.startedAt, s.durationSec, s.distanceM, s.activeKcal, s.avgSpeedKmh, s.steps),
             )
-            if (ok) { c.repository.markExported(s.id); "Séance envoyée à Health Connect." }
+            if (result.sent) {
+                c.repository.markExported(s.id)
+                "Séance envoyée à Health Connect." + result.report.takeIf { it.isNotBlank() }?.let { "\n$it" }.orEmpty()
+            }
             else "Autorisez d'abord Health Connect dans l'onglet Santé."
         }.getOrElse { "Export impossible : ${it.message}" }
     }

@@ -60,14 +60,17 @@ class AppContainer(private val app: Application) {
             val id = repository.recordSession(summary)
             // Export automatique à la fin de chaque séance ; sinon réessayable depuis l'historique.
             exportStatus.value = runCatching {
-                val ok = health.export(
+                val result = health.export(
                     ExportableSession(
                         summary.planName, summary.startedAt, summary.durationSec, summary.distanceM,
                         summary.activeKcal, summary.avgSpeedKmh, summary.steps, summary.samples,
                     ),
                 )
                 refreshWidget()
-                if (ok) { repository.markExported(id); "✓ Séance envoyée à Health Connect" }
+                if (result.sent) {
+                    repository.markExported(id)
+                    "✓ Séance envoyée à Health Connect" + result.report.takeIf { it.isNotBlank() }?.let { "\n$it" }.orEmpty()
+                }
                 else "Non envoyée à Health Connect : autorisez-le dans l'onglet Santé, puis utilisez « Envoyer » dans l'historique."
             }.getOrElse { "Envoi à Health Connect impossible (${it.message}) : réessayez depuis l'historique." }
         } else {
