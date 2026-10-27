@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.feanor91.treadmill.domain.Calories
 import com.feanor91.treadmill.AppContainer
 import com.feanor91.treadmill.data.SessionEntity
 import com.feanor91.treadmill.health.ExportableSession
@@ -50,7 +51,10 @@ class HistoryViewModel(private val c: AppContainer) : ViewModel() {
     fun export(s: SessionEntity) = viewModelScope.launch {
         message.value = runCatching {
             val result = c.health.export(
-                ExportableSession(s.planName, s.startedAt, s.durationSec, s.distanceM, s.activeKcal, s.avgSpeedKmh, s.steps),
+                ExportableSession(
+                    s.planName, s.startedAt, s.durationSec, s.distanceM, s.activeKcal, s.avgSpeedKmh, s.steps,
+                    restingKcal = (Calories.bmrPerDay(c.profileStore.profile.value) * s.durationSec / 86_400.0).toInt(),
+                ),
             )
             if (result.sent) {
                 c.repository.markExported(s.id)

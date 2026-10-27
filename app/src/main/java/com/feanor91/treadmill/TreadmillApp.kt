@@ -11,6 +11,7 @@ import com.feanor91.treadmill.ble.HeartRateClient
 import com.feanor91.treadmill.data.AppDatabase
 import com.feanor91.treadmill.data.DeviceStore
 import com.feanor91.treadmill.data.ProfileStore
+import com.feanor91.treadmill.domain.Calories
 import com.feanor91.treadmill.domain.ConnectionState
 import kotlinx.coroutines.delay
 import com.feanor91.treadmill.health.ExportableSession
@@ -63,7 +64,9 @@ class AppContainer(private val app: Application) {
                 val result = health.export(
                     ExportableSession(
                         summary.planName, summary.startedAt, summary.durationSec, summary.distanceM,
-                        summary.activeKcal, summary.avgSpeedKmh, summary.steps, summary.samples,
+                        summary.activeKcal, summary.avgSpeedKmh, summary.steps,
+                        restingKcal = (Calories.bmrPerDay(profileStore.profile.value) * summary.durationSec / 86_400.0).toInt(),
+                        samples = summary.samples,
                     ),
                 )
                 refreshWidget()

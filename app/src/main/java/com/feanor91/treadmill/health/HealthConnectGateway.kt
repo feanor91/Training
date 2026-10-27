@@ -98,6 +98,8 @@ data class ExportableSession(
     val activeKcal: Int,
     val avgSpeedKmh: Double,
     val steps: Int = 0,
+    /** Part « repos » de la période (métabolisme de base), pour le total de calories que lisent d'autres applis. */
+    val restingKcal: Int = 0,
     val samples: List<com.feanor91.treadmill.domain.Sample> = emptyList(),
 )
 
@@ -135,6 +137,7 @@ class HealthConnectGateway(private val context: Context) {
         HealthPermission.getReadPermission(Vo2MaxRecord::class),
         HealthPermission.getReadPermission(StepsRecord::class),
         HealthPermission.getWritePermission(StepsRecord::class),
+        HealthPermission.getWritePermission(TotalCaloriesBurnedRecord::class),
     )
 
     val permissions: Set<String> = corePermissions + bodyPermissions
@@ -159,6 +162,7 @@ class HealthConnectGateway(private val context: Context) {
     suspend fun canWrite() = granted().containsAll(writePermissions)
 
     private suspend fun canWriteSteps() = HealthPermission.getWritePermission(StepsRecord::class) in granted()
+    private suspend fun canWriteTotal() = HealthPermission.getWritePermission(TotalCaloriesBurnedRecord::class) in granted()
 
     /** Écrit séance, distance, calories actives, pas, vitesse et rythme cardiaque. */
     suspend fun export(s: ExportableSession): ExportResult {
@@ -182,6 +186,13 @@ class HealthConnectGateway(private val context: Context) {
         if (s.activeKcal > 0) {
             records += ActiveCaloriesBurnedRecord(start, offset, end, offset, Energy.kilocalories(s.activeKcal.toDouble()), meta())
         }
+        // Samsung Health lit les calories d'un entraînement dans le total (repos + actif) et non dans les calories actives.
+        val totalAllowed = canWriteTotal()
+        if (s.activeKcal > 0 && totalAllowed) {
+            records += TotalCaloriesBurnedRecord(
+                start, offset, end, offset, Energy.kilocalories((s.activeKcal + s.restingKcal).toDouble()), meta(),
+            )
+        }
         val stepsAllowed = canWriteSteps()
         if (s.steps > 0 && stepsAllowed) {
             records += StepsRecord(start, offset, end, offset, s.steps.toLong(), meta())
@@ -196,7 +207,7 @@ class HealthConnectGateway(private val context: Context) {
         if (speed.isNotEmpty()) records += SpeedRecord(start, offset, end, offset, speed, meta())
 
         client.insertRecords(records)
-        return ExportResult(true, verify(s, start, end, stepsAllowed))
+        return ExportResult(true, verify(s, start, end, stepsAllowed, totalAllowed))
     }
 
     /**
@@ -204,7 +215,7 @@ class HealthConnectGateway(private val context: Context) {
      * applications confondues (Health Connect n'additionne pas des sources qui se chevauchent : celle qui a la
      * priorité l'emporte, souvent la montre).
      */
-    private suspend fun verify(s: ExportableSession, start: Instant, end: Instant, stepsAllowed: Boolean): String {
+    private suspend fun verify(s: ExportableSession, start: Instant, end: Instant, stepsAllowed: Boolean, totalAllowed: Boolean): String {
         val range = TimeRangeFilter.between(start, end)
         val mine = setOf(DataOrigin(context.packageName))
         val lines = mutableListOf<String>()
@@ -216,6 +227,9 @@ class HealthConnectGateway(private val context: Context) {
                 val kept = client.aggregate(AggregateRequest(setOf(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL), range))[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories
                 lines += "Calories : ${ours.toInt()} kcal écrites" + (kept?.let { " · retenues par Health Connect : ${it.toInt()} kcal" } ?: "")
             }.onFailure { lines += "Calories : ${s.activeKcal} kcal envoyées (relecture non autorisée)" }
+        }
+        if (s.activeKcal > 0 && !totalAllowed) {
+            lines += "Total calories : NON envoyé (autorisation manquante, onglet Santé > Autoriser la composition corporelle)."
         }
         if (s.steps > 0) {
             if (!stepsAllowed) {
