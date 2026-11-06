@@ -68,6 +68,9 @@ class WorkoutEngine(
     }
 
     private var job: Job? = null
+    /** Compte à rebours de reprise (après une pause) : la séance est déjà engagée, on ne l'efface pas si on l'interrompt. */
+    private var resumeJob: Job? = null
+    private var resuming = false
     private var scheduleId: Long? = null
     private var startedAt = 0L
     private var distanceBase: Int? = null
@@ -126,7 +129,8 @@ class WorkoutEngine(
             enterStep(0)
             while (isActive) {
                 delay(1_000)
-                if (_ui.value.state == WorkoutState.Running) tick()
+                // Pas de décompte du temps ni des statistiques pendant le compte à rebours de reprise.
+                if (_ui.value.state == WorkoutState.Running && _ui.value.countdownSec == 0) tick()
             }
         }
     }
@@ -137,11 +141,22 @@ class WorkoutEngine(
         scope.launch { ftms.pause() }
     }
 
+    /**
+     * Reprise après une pause : le tapis refait son compte à rebours de 5 s après Start. On l'affiche aussi,
+     * on fige le chrono pendant ce temps, puis on renvoie la vitesse et la pente de consigne une fois le tapis reparti.
+     */
     fun resume() {
         if (_ui.value.state != WorkoutState.Paused) return
-        _ui.update { it.copy(state = WorkoutState.Running) }
-        scope.launch {
-            ftms.start()
+        resuming = true
+        _ui.update { it.copy(state = WorkoutState.Running, countdownSec = COUNTDOWN_SEC) }
+        resumeJob = scope.launch {
+            launch { ftms.start() }
+            for (n in COUNTDOWN_SEC downTo 1) {
+                _ui.update { it.copy(countdownSec = n) }
+                delay(1_000)
+            }
+            resuming = false
+            _ui.update { it.copy(countdownSec = 0) }
             val u = _ui.value
             targetsPushed()
             push(u.targetSpeed, u.targetIncline)
@@ -150,7 +165,7 @@ class WorkoutEngine(
 
     fun stop() {
         if (!running) return
-        if (_ui.value.countdownSec > 0) {
+        if (_ui.value.countdownSec > 0 && !resuming) {
             // Annulation pendant le décompte : le tapis a déjà reçu Start, on l'arrête ; rien à enregistrer.
             job?.cancel()
             scope.launch { ftms.stop() }
@@ -166,7 +181,7 @@ class WorkoutEngine(
      */
     fun emergencyStop() {
         if (!running) return
-        if (_ui.value.countdownSec > 0) {
+        if (_ui.value.countdownSec > 0 && !resuming) {
             job?.cancel()
             _ui.value = WorkoutUi()
             scope.launch { ftms.emergencyStop() }
@@ -357,6 +372,8 @@ class WorkoutEngine(
 
     private fun finish(completed: Boolean, emergency: Boolean = false) {
         job?.cancel()
+        resumeJob?.cancel()
+        resuming = false
         val u = _ui.value
         val summary = SessionSummary(
             planName = u.planName, startedAt = startedAt, durationSec = u.elapsedSec, distanceM = u.distanceM,
@@ -366,7 +383,7 @@ class WorkoutEngine(
             activeKcal = kcalAcc.toInt(), steps = stepsAcc.toInt(), samples = samples.toList(),
             zoneSeconds = zoneSeconds.toList(), deviceKcal = deviceKcal(),
         )
-        _ui.update { it.copy(state = WorkoutState.Finished, summary = summary, speedKmh = 0.0) }
+        _ui.update { it.copy(state = WorkoutState.Finished, summary = summary, speedKmh = 0.0, countdownSec = 0) }
         scope.launch {
             if (emergency) ftms.emergencyStop() else ftms.stop()
             onFinished(summary)
