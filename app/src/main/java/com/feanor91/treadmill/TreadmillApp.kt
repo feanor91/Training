@@ -26,7 +26,9 @@ import com.feanor91.treadmill.domain.WorkoutEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Racine de composition manuelle : un seul client BLE et un seul moteur de séance pour tout le processus. */
 class AppContainer(private val app: Application) {
@@ -114,8 +116,36 @@ class AppContainer(private val app: Application) {
         }
     }
 
-    /** Démarre la séance du calendrier [scheduleId] (ou une course libre) : utilisé par le widget. */
+    private var startingFromShortcut = false
+
+    /**
+     * Widget et notification lancent l'appli à froid : le tapis mémorisé n'est pas encore reconnecté, et une séance
+     * démarrée tout de suite serait simulée (aucune commande Start, donc pas de compte à rebours sur le tapis).
+     * On attend donc sa connexion, quelques secondes au plus.
+     */
+    private suspend fun awaitSavedTreadmill() {
+        if (deviceStore.treadmill.value == null || ftms.state.value == ConnectionState.Ready) return
+        if (!deviceStore.autoReconnect.value || !canUseBluetooth()) return
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(app, "Connexion au tapis…", android.widget.Toast.LENGTH_SHORT).show()
+        }
+        tryReconnect()
+        withTimeoutOrNull(RECONNECT_WAIT_MS) { ftms.state.first { it == ConnectionState.Ready } }
+    }
+
+    /** Démarre la séance du calendrier [scheduleId] (ou une course libre) : utilisé par le widget et la notification. */
     suspend fun startFromWidget(scheduleId: Long, free: Boolean, planId: Long = -1): Boolean {
+        if (engine.running || startingFromShortcut) return false
+        startingFromShortcut = true
+        try {
+            awaitSavedTreadmill()
+            return startNow(scheduleId, free, planId)
+        } finally {
+            startingFromShortcut = false
+        }
+    }
+
+    private suspend fun startNow(scheduleId: Long, free: Boolean, planId: Long): Boolean {
         if (engine.running) return false
         if (planId >= 0) {
             val plan = repository.plan(planId) ?: return false
@@ -147,6 +177,9 @@ class AppContainer(private val app: Application) {
     private companion object {
         /** À incrémenter quand de nouveaux plans par défaut sont ajoutés. */
         const val SEED_VERSION = 4
+
+        /** Attente maximale de la reconnexion du tapis avant de démarrer quand même (séance simulée). */
+        const val RECONNECT_WAIT_MS = 15_000L
     }
 }
 
